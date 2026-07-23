@@ -26,6 +26,10 @@ def enqueue_job(account_id: str, job_type: str, payload: dict) -> dict:
     res = supabase.table("job_queue").insert({"account_id": account_id, "type": job_type, "payload": payload, "status": "pending"}).execute()
     return res.data[0]
 
+@app.get("/")
+def root():
+    return {"ok": True, "service": "twinby-manager"}
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "twinby-manager"}
