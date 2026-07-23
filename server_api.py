@@ -384,10 +384,27 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
 
 # ── Tasks — проксируем на воркеры ────────────────────────
 
+def get_account_platform(account_id: str) -> str:
+    """Получает платформу аккаунта из Supabase."""
+    try:
+        res = supabase.table("accounts").select("platform").eq("id", account_id).limit(1).execute()
+        if res.data:
+            return (res.data[0].get("platform") or "mamba").lower()
+    except Exception:
+        pass
+    return "mamba"
+
 @app.post("/api/tasks/likes-http")
 async def api_task_likes(payload: LikesTaskRequest, authorization: str | None = Header(default=None)):
-    platform = payload.platform.lower()
-    return await proxy_to_worker(platform, "/api/tasks/likes-http", payload.model_dump(), authorization)
+    platform = get_account_platform(payload.account_id)
+    if platform == "lovelaz":
+        return await proxy_to_worker("lovelaz", "/api/tasks/lovelaz-likes", payload.model_dump(), authorization)
+    elif platform == "twinby":
+        return await proxy_to_worker("twinby", "/api/tasks/twinby-likes", payload.model_dump(), authorization)
+    elif platform == "vznakomstve":
+        return await proxy_to_worker("vznakomstve", "/api/tasks/vznakomstve-likes", payload.model_dump(), authorization)
+    else:
+        return await proxy_to_worker("mamba", "/api/tasks/likes-http", payload.model_dump(), authorization)
 
 @app.post("/api/tasks/lovelaz-likes")
 async def api_task_lovelaz_likes(payload: LikesTaskRequest, authorization: str | None = Header(default=None)):
@@ -395,13 +412,27 @@ async def api_task_lovelaz_likes(payload: LikesTaskRequest, authorization: str |
 
 @app.post("/api/tasks/auto-reply-http")
 async def api_task_auto_reply(payload: AutoReplyTaskRequest, authorization: str | None = Header(default=None)):
-    platform = payload.platform.lower()
-    return await proxy_to_worker(platform, "/api/tasks/auto-reply-http", payload.model_dump(), authorization)
+    platform = get_account_platform(payload.account_id)
+    if platform == "lovelaz":
+        return await proxy_to_worker("lovelaz", "/api/tasks/lovelaz-auto-reply", payload.model_dump(), authorization)
+    elif platform == "twinby":
+        return await proxy_to_worker("twinby", "/api/tasks/twinby-auto-reply", payload.model_dump(), authorization)
+    elif platform == "vznakomstve":
+        return await proxy_to_worker("vznakomstve", "/api/tasks/vznakomstve-auto-reply", payload.model_dump(), authorization)
+    else:
+        return await proxy_to_worker("mamba", "/api/tasks/auto-reply-http", payload.model_dump(), authorization)
 
 @app.post("/api/tasks/auto-reply-http-loop")
 async def api_task_auto_reply_loop(payload: AutoReplyTaskRequest, authorization: str | None = Header(default=None)):
-    platform = payload.platform.lower()
-    return await proxy_to_worker(platform, "/api/tasks/auto-reply-http-loop", payload.model_dump(), authorization)
+    platform = get_account_platform(payload.account_id)
+    if platform == "lovelaz":
+        return await proxy_to_worker("lovelaz", "/api/tasks/lovelaz-auto-reply", payload.model_dump(), authorization)
+    elif platform == "twinby":
+        return await proxy_to_worker("twinby", "/api/tasks/twinby-auto-reply", payload.model_dump(), authorization)
+    elif platform == "vznakomstve":
+        return await proxy_to_worker("vznakomstve", "/api/tasks/vznakomstve-auto-reply", payload.model_dump(), authorization)
+    else:
+        return await proxy_to_worker("mamba", "/api/tasks/auto-reply-http-loop", payload.model_dump(), authorization)
 
 @app.post("/api/tasks/lovelaz-auto-reply")
 async def api_task_lovelaz_auto_reply(payload: AutoReplyTaskRequest, authorization: str | None = Header(default=None)):
