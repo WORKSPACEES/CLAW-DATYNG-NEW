@@ -33,7 +33,7 @@ async def keep_alive():
     await asyncio.sleep(30)  # даём время стартовать
     while True:
         try:
-            port = int(os.environ.get("PORT_LOVELAZ", 10001))
+            port = int(os.environ.get("PORT", 10001))
             async with aiohttp.ClientSession() as session:
                 await session.get(f"http://localhost:{port}/health", timeout=aiohttp.ClientTimeout(total=10))
                 print("[WORKER-LOVELAZ] Keep-alive ping OK", flush=True)
@@ -49,7 +49,7 @@ async def start_dummy_server():
     app.router.add_get("/", lambda r: web.Response(text="OK"))
     runner = web.AppRunner(app)
     await runner.setup()
-    port = int(os.environ.get("PORT_LOVELAZ", 10001))
+    port = int(os.environ.get("PORT", 10001))
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
 
