@@ -30,6 +30,16 @@ def enqueue_job(account_id: str, job_type: str, payload: dict) -> dict:
 def root():
     return {"ok": True, "service": "twinby-manager"}
 
+@app.head("/")
+def root_head():
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
+@app.head("/health")
+def health_head():
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "twinby-manager"}
