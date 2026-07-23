@@ -24,11 +24,6 @@ from pathlib import Path
 
 import httpx
 from supabase import create_client, Client
-from mamba_client import (
-    task_likes_http as mamba_task_likes_http,
-    task_auto_reply_http as mamba_task_auto_reply_http,
-    validate_cookies,
-)
 from supabase.client import ClientOptions
 
 import aiohttp
@@ -170,11 +165,6 @@ def get_private_cookies(account_id: str) -> list[dict]:
         return parse_cookies(res.data[0].get("cookies_raw", ""))
     return []
 
-from mamba_client import (
-    task_likes_http as mamba_task_likes_http,
-    task_auto_reply_http as mamba_task_auto_reply_http,
-    validate_cookies,
-)
 from lovelaz_client import (
     parse_cookies as lovelaz_parse_cookies,
     task_likes_http as lovelaz_task_likes_http,
@@ -1703,47 +1693,30 @@ async def process_job(job: dict):
         )
 
         try:
+            raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
+            if not raw_res.data:
+                raise RuntimeError("Cookies анкеты не найдены")
+            cookies_raw = raw_res.data[0].get("cookies_raw", "")
+            cookies = lovelaz_parse_cookies(cookies_raw)
+            log_fn = lambda msg: push_split_log_sync(account_id, msg)
+
             if job_type in ("likes", "likes-http"):
                 limit = max(1, min(100, int(payload.get("limit", 10))))
-                platform = get_account_platform(account_id)
+                try:
+                    result = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: lovelaz_task_likes_http(cookies, limit=limit)
+                        ),
+                        timeout=120.0
+                    )
+                except asyncio.TimeoutError:
+                    raise RuntimeError("Lovelaz лайки: таймаут 120 сек")
 
-                raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
-                if not raw_res.data:
-                    raise RuntimeError("Cookies анкеты не найдены")
-                cookies_raw = raw_res.data[0].get("cookies_raw", "")
-                log_fn = lambda msg: push_split_log_sync(account_id, msg)
-
-                if platform == "lovelaz":
-                    cookies = lovelaz_parse_cookies(cookies_raw)
-                    try:
-                        result = await asyncio.wait_for(
-                            asyncio.get_event_loop().run_in_executor(
-                                None,
-                                lambda: lovelaz_task_likes_http(cookies, limit=limit)
-                            ),
-                            timeout=120.0
-                        )
-                    except asyncio.TimeoutError:
-                        raise RuntimeError("Lovelaz лайки: таймаут 120 сек (buildId не получен)")
-                else:
-                    from mamba_client import parse_cookies as mamba_parse_cookies
-                    cookies = mamba_parse_cookies(cookies_raw)
-                    ok, missing = validate_cookies(cookies)
-                    if not ok:
-                        raise RuntimeError(f"Не хватает кук: {', '.join(missing)}")
-                    result = mamba_task_likes_http(cookies, limit=limit, log_fn=log_fn)
-
-                chain_result = {}
                 if result.get("blocked"):
-                    chain_result = mark_account_blocked(account_id)
-                result["chain_result"] = chain_result
-                result["reserve_account_id"] = chain_result.get("reserve_account_id")
+                    mark_account_blocked(account_id)
 
-                append_task_log({
-                    "account_id": account_id,
-                    "type": "likes",
-                    **result,
-                })
+                append_task_log({"account_id": account_id, "type": "likes", **result})
 
             elif job_type in ("auto-reply", "auto-reply-http"):
                 settings = get_ai_settings(account_id)
@@ -1751,82 +1724,30 @@ async def process_job(job: dict):
                 if not groq_keys:
                     raise RuntimeError("Не задан Groq API ключ")
 
-                platform = get_account_platform(account_id)
-
-                raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
-                if not raw_res.data:
-                    raise RuntimeError("Cookies не найдены")
-                cookies_raw = raw_res.data[0].get("cookies_raw", "")
-
                 settings["_account_id"] = account_id
-                log_fn = lambda msg: push_split_log_sync(account_id, msg)
 
-                if platform == "lovelaz":
-                    cookies = lovelaz_parse_cookies(cookies_raw)
-                    try:
-                        result = await asyncio.wait_for(
-                            asyncio.get_event_loop().run_in_executor(
-                                None,
-                                lambda: lovelaz_task_auto_reply_http(
-                                    cookies=cookies,
-                                    settings=settings,
-                                    build_prompt_fn=build_system_prompt,
-                                    call_groq_fn=call_groq_with_rotation,
-                                    max_chats=payload.get("max_dialogs", 20),
-                                    should_cancel_fn=lambda: should_cancel(account_id),
-                                )
-                            ),
-                            timeout=300.0
-                        )
-                    except asyncio.TimeoutError:
-                        raise RuntimeError("Lovelaz авто-ответы: таймаут 300 сек (buildId не получен)")
-                else:
-                    from mamba_client import parse_cookies as mamba_parse_cookies
-                    cookies = mamba_parse_cookies(cookies_raw)
-                    ok, missing = validate_cookies(cookies)
-                    if not ok:
-                        raise RuntimeError(f"Не хватает кук: {', '.join(missing)}")
-
-                    result = mamba_task_auto_reply_http(
-                        cookies=cookies,
-                        settings=settings,
-                        build_prompt_fn=build_system_prompt,
-                        call_groq_fn=call_groq_with_rotation,
-                        max_chats=payload.get("max_dialogs", 20),
-                        should_cancel_fn=lambda: should_cancel(account_id),
-                        telegram_was_sent_fn=telegram_was_sent,
-                        reserve_telegram_send_fn=reserve_telegram_send,
-                        cancel_telegram_reservation_fn=cancel_telegram_reservation,
-                        log_fn=log_fn,
+                try:
+                    result = await asyncio.wait_for(
+                        asyncio.get_event_loop().run_in_executor(
+                            None,
+                            lambda: lovelaz_task_auto_reply_http(
+                                cookies=cookies,
+                                settings=settings,
+                                build_prompt_fn=build_system_prompt,
+                                call_groq_fn=call_groq_with_rotation,
+                                max_chats=payload.get("max_dialogs", 20),
+                                should_cancel_fn=lambda: should_cancel(account_id),
+                            )
+                        ),
+                        timeout=300.0
                     )
+                except asyncio.TimeoutError:
+                    raise RuntimeError("Lovelaz авто-ответы: таймаут 300 сек")
 
-                chain_result = {}
                 if result.get("blocked"):
-                    chain_result = mark_account_blocked(account_id)
-                result["chain_result"] = chain_result
-                result["reserve_account_id"] = chain_result.get("reserve_account_id")
+                    mark_account_blocked(account_id)
 
-                append_task_log({
-                    "account_id": account_id,
-                    "type": "auto-reply-http",
-                    **result,
-                })
-
-            elif job_type == "broadcast":
-                targets = payload.get("targets", [])
-                message = payload.get("message", "")
-
-                result = await run_broadcast_task(
-                    account_id,
-                    targets,
-                    message
-                )
-
-                append_task_log({
-                    "account_id": account_id,
-                    "type": "broadcast",
-                    **result,
-                })
+                append_task_log({"account_id": account_id, "type": "auto-reply-http", **result})
 
             else:
                 raise RuntimeError(
