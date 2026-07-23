@@ -961,7 +961,7 @@ def index_head():
     return Response(status_code=200)
 
 app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
-app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
+app.mount("/", StaticFiles(directory=BASE_DIR), name="static")
 
 if __name__ == "__main__":
     import uvicorn
