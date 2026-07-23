@@ -32,10 +32,10 @@ from shared import (
 
 # ── URL воркер-серверов ───────────────────────────────────
 # Замени на реальные URL после деплоя на Render
-MAMBA_SERVER_URL      = "http://localhost:8002"
-LOVELAZ_SERVER_URL    = "http://localhost:8003"
-TWINBY_SERVER_URL     = "http://localhost:8004"
-VZNAKOMSTVE_SERVER_URL = "http://localhost:8005"
+MAMBA_SERVER_URL      = "https://claw-datyng-new-j1ea.onrender.com"
+LOVELAZ_SERVER_URL    = "https://lovelaz-server.onrender.com"
+TWINBY_SERVER_URL     = "https://claw-datyng-new-gu8x.onrender.com"
+VZNAKOMSTVE_SERVER_URL = "https://vznakomstve-server.onrender.com"
 
 PLATFORM_URLS = {
     "mamba":        MAMBA_SERVER_URL,
