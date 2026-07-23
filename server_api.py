@@ -511,20 +511,52 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": cookies_raw_vzn}).execute()
         return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
 
-    # ── Lovelaz / Mamba — проксируем на воркер ──
-    worker_url = PLATFORM_URLS.get(platform_lower)
-    if not worker_url:
-        raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.post(
-                f"{worker_url}/api/connect",
-                json=payload.model_dump(),
-                headers={"Authorization": authorization or ""}
-            )
-            return resp.json()
-    except httpx.ConnectError:
-        raise HTTPException(status_code=503, detail=f"Воркер {platform_lower} недоступен")
+    # ── Mamba / Lovelaz — напрямую ──
+    if platform_lower == "mamba":
+        from mamba_client import parse_cookies as _m_parse, get_profile_photo as _m_photo
+        cookies = _m_parse(payload.cookies_raw)
+        photo_url = ""
+        try:
+            photo_url = _m_photo(cookies) or ""
+        except Exception as e:
+            print(f"[MAMBA CONNECT] фото не получено: {e}", flush=True)
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id, "owner_email": session["email"], "platform": "Mamba",
+            "name": payload.account_name or "Анкета",
+            "profile_url": payload.profile_url, "final_url": payload.profile_url,
+            "title": payload.account_name or "Анкета",
+            "photo_url": photo_url, "cookies_count": len(cookies), "cookies_valid": True,
+            "session_valid": True, "session_reason": "HTTP проверка",
+            "images_found": 0, "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": payload.cookies_raw}).execute()
+        return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    if platform_lower == "lovelaz":
+        from lovelaz_client import parse_cookies as _lz_parse, get_profile_photo as _lz_photo
+        cookies = _lz_parse(payload.cookies_raw)
+        photo_url = ""
+        try:
+            photo_url = _lz_photo(cookies) or ""
+        except Exception as e:
+            print(f"[LOVELAZ CONNECT] фото не получено: {e}", flush=True)
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id, "owner_email": session["email"], "platform": "Lovelaz",
+            "name": payload.account_name or "Анкета",
+            "profile_url": payload.profile_url, "final_url": payload.profile_url,
+            "title": payload.account_name or "Анкета",
+            "photo_url": photo_url, "cookies_count": len(cookies), "cookies_valid": True,
+            "session_valid": True, "session_reason": "HTTP проверка",
+            "images_found": 0, "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": payload.cookies_raw}).execute()
+        return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
 
 # ── Tasks — проксируем на воркеры ────────────────────────
 
