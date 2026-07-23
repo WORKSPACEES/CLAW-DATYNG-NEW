@@ -945,14 +945,23 @@ def api_dismiss_groq_error():
 def health():
     return {"ok": True, "service": "api"}
 
+@app.head("/health")
+def health_head():
+    return {"ok": True}
+
 # ── Static files ──────────────────────────────────────────
 
 @app.get("/")
 def index():
     return FileResponse(BASE_DIR / "index.html")
 
+@app.head("/")
+def index_head():
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
 app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
-app.mount("/", StaticFiles(directory=BASE_DIR), name="static")
+app.mount("/static", StaticFiles(directory=BASE_DIR), name="static")
 
 if __name__ == "__main__":
     import uvicorn
