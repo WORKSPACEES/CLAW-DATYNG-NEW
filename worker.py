@@ -1696,7 +1696,7 @@ async def process_job(job: dict):
 
             if job_type in ("likes", "likes-http"):
                 limit = max(1, min(100, int(payload.get("limit", 10))))
-                from mamba_client import parse_cookies as mamba_parse_cookies
+                from mamba_client import parse_cookies as mamba_parse_cookies, validate_cookies
                 cookies = mamba_parse_cookies(cookies_raw)
                 ok, missing = validate_cookies(cookies)
                 if not ok:
@@ -1716,7 +1716,7 @@ async def process_job(job: dict):
                     raise RuntimeError("Не задан Groq API ключ")
 
                 settings["_account_id"] = account_id
-                from mamba_client import parse_cookies as mamba_parse_cookies
+                from mamba_client import parse_cookies as mamba_parse_cookies, validate_cookies
                 cookies = mamba_parse_cookies(cookies_raw)
                 ok, missing = validate_cookies(cookies)
                 if not ok:
