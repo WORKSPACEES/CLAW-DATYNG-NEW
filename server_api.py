@@ -366,11 +366,155 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
     session = require_auth(authorization)
     platform_lower = payload.platform.strip().lower()
 
-    # Проксируем на нужный воркер для подключения
+    if not payload.profile_url.startswith("http") and platform_lower != "vznakomstve":
+        raise HTTPException(status_code=400, detail="profile_url должен начинаться с http")
+
+    cookies = []
+    x_token = ""
+
+    # ── Twinby ──
+    if platform_lower == "twinby":
+        if not payload.twinby_email or not payload.twinby_code:
+            raise HTTPException(status_code=400, detail="Введи email и код из письма")
+        import http.client as _hc, json as _json
+        conn = _hc.HTTPSConnection("twinby.ru", timeout=15)
+        body = _json.dumps({"login": payload.twinby_email, "provider": "email", "code": payload.twinby_code}).encode()
+        conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers={
+            "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)",
+        })
+        resp = conn.getresponse()
+        raw = resp.read()
+        conn.close()
+        if resp.status != 200:
+            raise HTTPException(status_code=400, detail=f"Неверный код или email (статус {resp.status})")
+        data = _json.loads(raw.decode("utf-8", errors="ignore"))
+        token = data.get("accessToken") or data.get("token") or data.get("access") or data.get("jwt") or ""
+        if not token:
+            raise HTTPException(status_code=400, detail=f"Twinby не вернул токен. Ответ: {str(data)[:200]}")
+
+        photo_url = ""
+        try:
+            from twinby_client import get_me
+            me = get_me(token)
+            avatar = me.get("avatar") or {}
+            photo_url = avatar.get("file") or avatar.get("preview") or ""
+            if not photo_url:
+                photos = me.get("photos") or []
+                if photos and isinstance(photos[0], dict):
+                    photo_url = photos[0].get("file") or photos[0].get("preview") or ""
+        except Exception as e:
+            print(f"[TWINBY CONNECT] фото не получено: {e}", flush=True)
+
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id, "owner_email": session["email"], "platform": "Twinby",
+            "name": payload.account_name or payload.twinby_email,
+            "profile_url": "https://twinby.ru", "final_url": "https://twinby.ru",
+            "title": payload.account_name or payload.twinby_email,
+            "photo_url": photo_url, "cookies_count": 1, "cookies_valid": True,
+            "session_valid": True, "session_reason": "JWT авторизация",
+            "images_found": 0, "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": token}).execute()
+        return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    # ── Vznakomstve ──
+    if platform_lower == "vznakomstve" and payload.vzn_email and payload.vzn_code:
+        import http.client as _hc, gzip as _gzip
+        boundary = "getx-http-boundary-CLAWAI"
+
+        conn = _hc.HTTPSConnection("meet.wcase.net", timeout=15)
+        body_bytes = (
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"email\"\r\n\r\n{payload.vzn_email}\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"code\"\r\n\r\n{payload.vzn_code}\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"lang\"\r\n\r\nru\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"no_restore\"\r\n\r\n1\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+        conn.request("POST", "/email", body=body_bytes, headers={
+            "Accept": "application/json", "Accept-Encoding": "gzip",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body_bytes)),
+            "User-Agent": "InDating v3.2.6 (302060), Android 9, G011A", "Host": "meet.wcase.net",
+        })
+        resp = conn.getresponse()
+        raw = resp.read()
+        conn.close()
+        if resp.getheader("Content-Encoding") == "gzip":
+            raw = _gzip.decompress(raw)
+        data1 = json.loads(raw.decode("utf-8", errors="ignore"))
+        sid = data1.get("data", {}).get("sid") or data1.get("sessionId") or data1.get("sid") or data1.get("token") or ""
+        print(f"[VZN LOGIN] step1 status={resp.status} sid={sid}", flush=True)
+        if not sid:
+            raise HTTPException(status_code=400, detail=f"Неверный код. Ответ: {str(data1)[:200]}")
+
+        conn2 = _hc.HTTPSConnection("meet.wcase.net", timeout=15)
+        body2 = (
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"token\"\r\n\r\n{sid}\r\n"
+            f"--{boundary}\r\nContent-Disposition: form-data; name=\"no_restore\"\r\n\r\n1\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+        conn2.request("POST", "/login", body=body2, headers={
+            "Accept": "application/json", "Accept-Encoding": "gzip",
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(body2)),
+            "User-Agent": "InDating v3.2.6 (302060), Android 9, G011A", "Host": "meet.wcase.net",
+        })
+        resp2 = conn2.getresponse()
+        raw2 = resp2.read()
+        set_cookie = resp2.getheader("Set-Cookie") or ""
+        conn2.close()
+        if resp2.getheader("Content-Encoding") == "gzip":
+            raw2 = _gzip.decompress(raw2)
+        data2 = json.loads(raw2.decode("utf-8", errors="ignore"))
+
+        phpsessid = ""
+        for part in set_cookie.split(";"):
+            if part.strip().startswith("PHPSESSID="):
+                phpsessid = part.strip().split("=", 1)[1]
+                break
+        if not phpsessid:
+            phpsessid = data2.get("sessionId") or data2.get("data", {}).get("sid") or ""
+        if not phpsessid:
+            raise HTTPException(status_code=400, detail=f"Не удалось получить сессию: {str(data2)[:200]}")
+
+        x_token = data1.get("token") or data2.get("token") or sid or ""
+        cookies_raw_vzn = json.dumps([
+            {"name": "PHPSESSID", "value": phpsessid},
+            {"name": "x_token", "value": x_token},
+        ])
+        payload.cookies_raw = cookies_raw_vzn
+
+        from vznakomstve_client import parse_cookies as _vzn_parse, get_profile_photo as _vzn_get_photo
+        import time as _time
+        http_cookies = _vzn_parse(cookies_raw_vzn)
+        photo_url = ""
+        for _attempt in range(3):
+            photo_url = _vzn_get_photo(http_cookies) or ""
+            if photo_url:
+                break
+            _time.sleep(2)
+
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id, "owner_email": session["email"], "platform": payload.platform,
+            "name": payload.account_name or "Взнакомстве",
+            "profile_url": "https://vznakomstve.com/app/",
+            "final_url": "https://vznakomstve.com/app/",
+            "title": payload.account_name or "Взнакомстве",
+            "photo_url": photo_url, "cookies_count": 2, "cookies_valid": True,
+            "session_valid": True, "session_reason": "Email авторизация",
+            "images_found": 0, "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": cookies_raw_vzn}).execute()
+        return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    # ── Lovelaz / Mamba — проксируем на воркер ──
     worker_url = PLATFORM_URLS.get(platform_lower)
     if not worker_url:
         raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
-
     try:
         async with httpx.AsyncClient(timeout=60) as client:
             resp = await client.post(
