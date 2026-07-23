@@ -1,12 +1,11 @@
 """
-worker.py — локальный воркер CLAW-AI MANAGER.
+worker.py — локальный воркер CLAW-AI MANAGER (только Mamba).
 
-Опрашивает таблицу job_queue в Supabase, выполняет реальные действия
-через Playwright на этом ПК (лайки / автоответы Groq / рассылка),
+Опрашивает таблицу job_queue в Supabase только для Mamba-аккаунтов,
 и записывает результат обратно в Supabase.
 
 Запуск:
-    python worker.py
+    python worker_lovelaz.py
 
 Зависимости (если ещё не установлены):
     pip install supabase httpx playwright
@@ -25,34 +24,34 @@ from pathlib import Path
 
 import httpx
 from supabase import create_client, Client
-from mamba_client import (
-    task_likes_http as mamba_task_likes_http,
-    task_auto_reply_http as mamba_task_auto_reply_http,
-    validate_cookies,
-)
 from supabase.client import ClientOptions
 
 import aiohttp
 
+async def keep_alive():
+    """Пингуем себя каждые 4 минуты чтобы Render не усыпил сервис."""
+    await asyncio.sleep(30)  # даём время стартовать
+    while True:
+        try:
+            port = int(os.environ.get("PORT", 10000))
+            async with aiohttp.ClientSession() as session:
+                await session.get(f"http://localhost:{port}/health", timeout=aiohttp.ClientTimeout(total=10))
+                print("[WORKER-MAMBA] Keep-alive ping OK", flush=True)
+        except Exception as e:
+            print(f"[WORKER-MAMBA] Keep-alive ping failed: {e}", flush=True)
+        await asyncio.sleep(240)
 
-def start_dummy_server():
-    """Запускаем HTTP сервер в отдельном потоке чтобы не блокировался event loop."""
-    import threading
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"OK")
-        def log_message(self, format, *args):
-            pass  # подавляем логи
-
+async def start_dummy_server():
+    """Слушаем PORT, чтобы Render не считал сервис мёртвым."""
+    from aiohttp import web
+    app = web.Application()
+    app.router.add_get("/health", lambda r: web.Response(text="OK"))
+    app.router.add_get("/", lambda r: web.Response(text="OK"))
+    runner = web.AppRunner(app)
+    await runner.setup()
     port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    print(f"[WORKER] HTTP сервер поднят на порту {port}", flush=True)
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
 
 # ══════════════════════════════════════════════════════════
 # КОНФИГ — те же значения что в server.py
@@ -166,16 +165,7 @@ def get_private_cookies(account_id: str) -> list[dict]:
         return parse_cookies(res.data[0].get("cookies_raw", ""))
     return []
 
-from mamba_client import (
-    task_likes_http as mamba_task_likes_http,
-    task_auto_reply_http as mamba_task_auto_reply_http,
-    validate_cookies,
-)
-from lovelaz_client import (
-    parse_cookies as lovelaz_parse_cookies,
-    task_likes_http as lovelaz_task_likes_http,
-    task_auto_reply_http as lovelaz_task_auto_reply_http,
-)
+
 
 def get_account_platform(account_id: str) -> str:
     """Возвращает платформу анкеты в нижнем регистре: 'mamba', 'lovelaz' и т.д."""
@@ -468,7 +458,7 @@ def build_system_prompt(s: dict) -> str:
         "Иногда (1 раз из 10) можно разбить мысль на два сообщения подряд.\n"
         "На длинное сообщение — отвечай только на главное, 1-2 предложения."
     )
-
+    
     parts.append(
         "ЕСЛИ КОНТАКТ УЖЕ БЫЛ ПЕРЕДАН В ЭТОМ ДИАЛОГЕ:\n"
         "Найди в истории сообщение где ты уже дала контакт.\n"
@@ -1328,7 +1318,7 @@ async def pw_run_chat_task(page, settings: dict, account_id: str) -> dict:
                 if msg_count <= 1:
                     first_msg = call_groq_with_rotation(
                         account_id=account_id, settings=settings, system_prompt=system_prompt,
-                        messages=[{"role": "user", "content": "Напиши первое сообщение — просто поздоровайся коротко."}]
+                        messages=[{"role": "user", "content": "Напиши первое сообщение для начала знакомства. В стиле: 'приветик, как насчёт встретиться?' или 'привет, не хочешь встретиться и хорошо провести время?'. Без контактов, без тг, без суммы мп — только приглашение к встрече в лёгкой игривой форме."}]
                     )
 
                     contacts = settings.get("contacts", "")
@@ -1579,7 +1569,7 @@ async def run_broadcast_task(
                     failed += 1
                     failed_urls.append(raw_target)
 
-                await asyncio.sleep(0)
+                await asyncio.sleep(4 + (sent % 4))
 
             except Exception:
                 failed += 1
@@ -1621,7 +1611,6 @@ async def run_broadcast_task(
 # ══════════════════════════════════════════════════════════
 
 JOB_SEMAPHORE         = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
-LOVELAZ_SEMAPHORE     = asyncio.Semaphore(5)   # Lovelaz отдельно — не больше 5 одновременно
 
 def get_mamba_account_ids() -> list[str]:
     """Возвращает список account_id с платформой mamba."""
@@ -1636,7 +1625,7 @@ def get_mamba_account_ids() -> list[str]:
 
 async def claim_next_job() -> dict | None:
     """
-    Берёт одну pending-задачу из очереди для Mamba-аккаунтов
+    Берёт одну pending-задачу из очереди для Lovelaz-аккаунтов
     и сразу помечает её running.
     """
     mamba_ids = get_mamba_account_ids()
@@ -1671,37 +1660,6 @@ async def claim_next_job() -> dict | None:
     job["status"] = "running"
     return job
 
-async def claim_next_jobs_batch(limit: int) -> list[dict]:
-    mamba_ids = get_mamba_account_ids()
-    if not mamba_ids:
-        return []
-
-    res = (
-        supabase.table("job_queue")
-        .select("*")
-        .eq("status", "pending")
-        .in_("account_id", mamba_ids)
-        .order("created_at", desc=False)
-        .limit(limit)
-        .execute()
-    )
-    if not res.data:
-        return []
-
-    claimed = []
-    for job in res.data:
-        update_res = (
-            supabase.table("job_queue")
-            .update({"status": "running"})
-            .eq("id", job["id"])
-            .eq("status", "pending")
-            .execute()
-        )
-        if update_res.data:
-            job["status"] = "running"
-            claimed.append(job)
-
-    return claimed
 
 async def finish_job(job_id: str, result: dict, status: str = "done"):
     try:
@@ -1711,23 +1669,6 @@ async def finish_job(job_id: str, result: dict, status: str = "done"):
         }).eq("id", job_id).execute()
     except Exception as e:
         print(f"[WORKER] Не удалось обновить job {job_id}: {e}", flush=True)
-
-
-async def heartbeat_job(job_id: str, interval: int = 15):
-    """Каждые 15 сек обновляет updated_at чтобы watchdog не сбросил задачу."""
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            res = supabase.table("job_queue").select("status").eq("id", job_id).execute()
-            if not res.data:
-                break
-            if res.data[0].get("status") not in ("running",):
-                break
-            supabase.table("job_queue").update(
-                {"updated_at": datetime.utcnow().isoformat()}
-            ).eq("id", job_id).execute()
-        except Exception as e:
-            print(f"[WORKER] Heartbeat ошибка для {job_id}: {e}", flush=True)
 
 
 async def process_job(job: dict):
@@ -1740,8 +1681,6 @@ async def process_job(job: dict):
         ACTIVE_JOB_IDS[account_id] = job_id
         CANCEL_FLAGS[account_id] = False
 
-        hb_task = asyncio.create_task(heartbeat_job(job_id))
-
         print(
             f"\n[WORKER] Задача {job_id} ({job_type}) "
             f"для анкеты {account_id}",
@@ -1749,130 +1688,65 @@ async def process_job(job: dict):
         )
 
         try:
+            raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
+            if not raw_res.data:
+                raise RuntimeError("Cookies анкеты не найдены")
+            cookies_raw = raw_res.data[0].get("cookies_raw", "")
+            log_fn = lambda msg: push_split_log_sync(account_id, msg)
+
             if job_type in ("likes", "likes-http"):
                 limit = max(1, min(100, int(payload.get("limit", 10))))
-                platform = get_account_platform(account_id)
-
-                raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
-                if not raw_res.data:
-                    raise RuntimeError("Cookies анкеты не найдены")
-                cookies_raw = raw_res.data[0].get("cookies_raw", "")
-                log_fn = lambda msg: push_split_log_sync(account_id, msg)
-
-                if platform == "lovelaz":
-                    cookies = lovelaz_parse_cookies(cookies_raw)
-                    try:
-                        result = await asyncio.wait_for(
-                            asyncio.get_event_loop().run_in_executor(
-                                None,
-                                lambda: lovelaz_task_likes_http(cookies, limit=limit)
-                            ),
-                            timeout=120.0
-                        )
-                    except asyncio.TimeoutError:
-                        raise RuntimeError("Lovelaz лайки: таймаут 120 сек (buildId не получен)")
-                else:
-                    from mamba_client import parse_cookies as mamba_parse_cookies
-                    cookies = mamba_parse_cookies(cookies_raw)
-                    ok, missing = validate_cookies(cookies)
-                    if not ok:
-                        raise RuntimeError(f"Не хватает кук: {', '.join(missing)}")
-                    result = mamba_task_likes_http(cookies, limit=limit, log_fn=log_fn)
+                from mamba_client import parse_cookies as mamba_parse_cookies
+                cookies = mamba_parse_cookies(cookies_raw)
+                ok, missing = validate_cookies(cookies)
+                if not ok:
+                    raise RuntimeError(f"Не хватает кук: {', '.join(missing)}")
+                result = mamba_task_likes_http(cookies, limit=limit, log_fn=log_fn)
 
                 chain_result = {}
                 if result.get("blocked"):
                     chain_result = mark_account_blocked(account_id)
                 result["chain_result"] = chain_result
                 result["reserve_account_id"] = chain_result.get("reserve_account_id")
-
-                append_task_log({
-                    "account_id": account_id,
-                    "type": "likes",
-                    **result,
-                })
+                append_task_log({"account_id": account_id, "type": "likes", **result})
 
             elif job_type in ("auto-reply", "auto-reply-http"):
                 settings = get_ai_settings(account_id)
-                groq_keys = get_groq_keys(settings)
-                if not groq_keys:
+                if not get_groq_keys(settings):
                     raise RuntimeError("Не задан Groq API ключ")
 
-                platform = get_account_platform(account_id)
-
-                raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
-                if not raw_res.data:
-                    raise RuntimeError("Cookies не найдены")
-                cookies_raw = raw_res.data[0].get("cookies_raw", "")
-
                 settings["_account_id"] = account_id
-                log_fn = lambda msg: push_split_log_sync(account_id, msg)
+                from mamba_client import parse_cookies as mamba_parse_cookies
+                cookies = mamba_parse_cookies(cookies_raw)
+                ok, missing = validate_cookies(cookies)
+                if not ok:
+                    raise RuntimeError(f"Не хватает кук: {', '.join(missing)}")
 
-                if platform == "lovelaz":
-                    cookies = lovelaz_parse_cookies(cookies_raw)
-                    try:
-                        result = await asyncio.wait_for(
-                            asyncio.get_event_loop().run_in_executor(
-                                None,
-                                lambda: lovelaz_task_auto_reply_http(
-                                    cookies=cookies,
-                                    settings=settings,
-                                    build_prompt_fn=build_system_prompt,
-                                    call_groq_fn=call_groq_with_rotation,
-                                    max_chats=payload.get("max_dialogs", 20),
-                                    should_cancel_fn=lambda: should_cancel(account_id),
-                                )
-                            ),
-                            timeout=300.0
-                        )
-                    except asyncio.TimeoutError:
-                        raise RuntimeError("Lovelaz авто-ответы: таймаут 300 сек (buildId не получен)")
-                else:
-                    from mamba_client import parse_cookies as mamba_parse_cookies
-                    cookies = mamba_parse_cookies(cookies_raw)
-                    ok, missing = validate_cookies(cookies)
-                    if not ok:
-                        raise RuntimeError(f"Не хватает кук: {', '.join(missing)}")
-
-                    result = mamba_task_auto_reply_http(
-                        cookies=cookies,
-                        settings=settings,
-                        build_prompt_fn=build_system_prompt,
-                        call_groq_fn=call_groq_with_rotation,
-                        max_chats=payload.get("max_dialogs", 20),
-                        should_cancel_fn=lambda: should_cancel(account_id),
-                        telegram_was_sent_fn=telegram_was_sent,
-                        reserve_telegram_send_fn=reserve_telegram_send,
-                        cancel_telegram_reservation_fn=cancel_telegram_reservation,
-                        log_fn=log_fn,
-                    )
+                result = mamba_task_auto_reply_http(
+                    cookies=cookies,
+                    settings=settings,
+                    build_prompt_fn=build_system_prompt,
+                    call_groq_fn=call_groq_with_rotation,
+                    max_chats=payload.get("max_dialogs", 20),
+                    should_cancel_fn=lambda: should_cancel(account_id),
+                    telegram_was_sent_fn=telegram_was_sent,
+                    reserve_telegram_send_fn=reserve_telegram_send,
+                    cancel_telegram_reservation_fn=cancel_telegram_reservation,
+                    log_fn=log_fn,
+                )
 
                 chain_result = {}
                 if result.get("blocked"):
                     chain_result = mark_account_blocked(account_id)
                 result["chain_result"] = chain_result
                 result["reserve_account_id"] = chain_result.get("reserve_account_id")
-
-                append_task_log({
-                    "account_id": account_id,
-                    "type": "auto-reply-http",
-                    **result,
-                })
+                append_task_log({"account_id": account_id, "type": "auto-reply-http", **result})
 
             elif job_type == "broadcast":
                 targets = payload.get("targets", [])
                 message = payload.get("message", "")
-
-                result = await run_broadcast_task(
-                    account_id,
-                    targets,
-                    message
-                )
-
-                append_task_log({
-                    "account_id": account_id,
-                    "type": "broadcast",
-                    **result,
-                })
+                result = await run_broadcast_task(account_id, targets, message)
+                append_task_log({"account_id": account_id, "type": "broadcast", **result})
 
             else:
                 raise RuntimeError(
@@ -1916,7 +1790,6 @@ async def process_job(job: dict):
             )
 
         finally:
-            hb_task.cancel()
             ACTIVE_JOB_IDS.pop(account_id, None)
             CANCEL_FLAGS.pop(account_id, None)
 
@@ -1957,7 +1830,7 @@ async def watchdog_loop():
 
 async def worker_loop():
     await recover_interrupted_jobs()
-    print(f"[WORKER] Запущен. Опрашиваю очередь каждые {POLL_INTERVAL}с, максимум {MAX_CONCURRENT_JOBS} задач параллельно.", flush=True)
+    print(f"[WORKER-MAMBA] Запущен. Опрашиваю очередь каждые {POLL_INTERVAL}с, максимум {MAX_CONCURRENT_JOBS} задач параллельно.", flush=True)
 
     running_tasks: set[asyncio.Task] = set()
 
@@ -1965,21 +1838,21 @@ async def worker_loop():
         # Чистим завершённые
         running_tasks = {t for t in running_tasks if not t.done()}
 
-        # Заполняем ВСЕ свободные слоты сразу — параллельно
+        # Заполняем ВСЕ свободные слоты сразу
         free_slots = MAX_CONCURRENT_JOBS - len(running_tasks)
-        if free_slots > 0:
+        for _ in range(free_slots):
             try:
-                jobs = await claim_next_jobs_batch(free_slots)
+                job = await claim_next_job()
             except Exception as e:
                 print(f"[WORKER] Ошибка опроса очереди: {e}", flush=True)
-                jobs = []
+                job = None
 
-            for job in jobs:
-                task = asyncio.create_task(process_job(job))
-                running_tasks.add(task)
+            if not job:
+                break  # задач больше нет — выходим из цикла
 
-            if jobs:
-                print(f"[WORKER] Запущено задач: {len(running_tasks)}", flush=True)
+            task = asyncio.create_task(process_job(job))
+            running_tasks.add(task)
+            print(f"[WORKER] Запущено задач: {len(running_tasks)}", flush=True)
 
         await asyncio.sleep(POLL_INTERVAL)
 
@@ -2071,11 +1944,12 @@ def push_split_log_sync(account_id: str, message: str):
 
 
 async def main():
-    start_dummy_server()
-    print(f"[WORKER] Health server запущен", flush=True)
+    await start_dummy_server()
+    print(f"[WORKER-MAMBA] Health server запущен", flush=True)
     
     await asyncio.gather(
         worker_loop(),
+        keep_alive(),
         watchdog_loop(),
     )
 
