@@ -32,10 +32,10 @@ from shared import (
 
 # ── URL воркер-серверов ───────────────────────────────────
 # Замени на реальные URL после деплоя на Render
-MAMBA_SERVER_URL      = "https://claw-datyng-new-j1ea.onrender.com"
-LOVELAZ_SERVER_URL    = "https://lovelaz-server.onrender.com"
-TWINBY_SERVER_URL     = "https://claw-datyng-new-gu8x.onrender.com"
-VZNAKOMSTVE_SERVER_URL = "https://vznakomstve-server.onrender.com"
+MAMBA_SERVER_URL      = "http://localhost:8002"
+LOVELAZ_SERVER_URL    = "http://localhost:8003"
+TWINBY_SERVER_URL     = "http://localhost:8004"
+VZNAKOMSTVE_SERVER_URL = "http://localhost:8005"
 
 PLATFORM_URLS = {
     "mamba":        MAMBA_SERVER_URL,
@@ -650,6 +650,253 @@ async def proxy_image(url: str, account_id: str = ""):
         return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e))
+
+# ── Analytics cards ──────────────────────────────────────
+
+class AnalyticsCardPayload(BaseModel):
+    account_id: str
+    bot_name: str = ""
+    bot_age: str = ""
+    bot_gender: str = "female"
+    location: str = ""
+    persona: str = ""
+    goal: str = ""
+    stop_topics: str = ""
+    contacts: str = ""
+    contacts_trigger: str = ""
+
+@app.get("/api/analytics-cards")
+def api_get_analytics_cards(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    accounts_res = supabase.table("accounts").select("id").in_("owner_email", owner_emails).execute()
+    account_ids = [a["id"] for a in (accounts_res.data or []) if a.get("id")]
+    if not account_ids:
+        return {"ok": True, "cards": []}
+    cards_res = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
+    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute()
+    settings_by_account = {s.get("account_id"): s for s in (settings_res.data or [])}
+    result = []
+    for card in (cards_res.data or []):
+        account_id = card.get("account_id", "")
+        settings = settings_by_account.get(account_id) or {}
+        result.append({
+            "id": card.get("id", ""),
+            "account_id": account_id,
+            "bot_name": card.get("bot_name") or settings.get("bot_name") or "",
+            "bot_age": card.get("bot_age") or settings.get("bot_age") or "",
+            "bot_gender": card.get("bot_gender") or settings.get("bot_gender") or "female",
+            "location": card.get("location") or settings.get("location") or "",
+            "persona": card.get("persona") or settings.get("persona") or "",
+            "goal": card.get("goal") or settings.get("goal") or "",
+            "stop_topics": card.get("stop_topics") or settings.get("stop_topics") or "",
+            "contacts": card.get("contacts") or settings.get("contacts") or "",
+            "contacts_trigger": card.get("contacts_trigger") or settings.get("contacts_trigger") or "",
+        })
+    return {"ok": True, "cards": result}
+
+@app.post("/api/analytics-cards")
+def api_save_analytics_card(payload: AnalyticsCardPayload):
+    data = payload.model_dump()
+    data["id"] = str(uuid.uuid4())
+    supabase.table("analytics_cards").insert(data).execute()
+    return {"ok": True, "card": data}
+
+@app.delete("/api/analytics-cards/{card_id}")
+def api_delete_analytics_card(card_id: str):
+    supabase.table("analytics_cards").delete().eq("id", card_id).execute()
+    return {"ok": True}
+
+# ── Jobs ──────────────────────────────────────────────────
+
+@app.get("/api/jobs/{job_id}")
+def api_get_job(job_id: str):
+    if not job_id or job_id == "undefined":
+        return {"ok": False, "job": None}
+    res = supabase.table("job_queue").select("*").eq("id", job_id).execute()
+    if not res.data:
+        return {"ok": False, "job": None}
+    return {"ok": True, "job": res.data[0]}
+
+@app.get("/api/jobs/account/{account_id}/active")
+def api_get_active_job(account_id: str):
+    res = supabase.table("job_queue").select("*").eq("account_id", account_id).in_("status", ["pending", "running"]).order("created_at", desc=True).limit(1).execute()
+    return {"ok": True, "job": res.data[0] if res.data else None}
+
+# ── Tasks likes / broadcast ───────────────────────────────
+
+@app.post("/api/tasks/likes")
+async def api_task_likes_old(payload: LikesTaskRequest, authorization: str | None = Header(default=None)):
+    platform = payload.platform.lower() if hasattr(payload, 'platform') else "mamba"
+    return await proxy_to_worker(platform, "/api/tasks/likes-http", payload.model_dump(), authorization)
+
+@app.post("/api/tasks/broadcast")
+async def api_task_broadcast(payload: dict, authorization: str | None = Header(default=None)):
+    return {"ok": True, "status": "not_implemented"}
+
+# ── Chats ─────────────────────────────────────────────────
+
+class SendChatMessageRequest(BaseModel):
+    account_id: str
+    href: str
+    message: str
+
+@app.post("/api/chats/send")
+async def api_send_chat_message(payload: SendChatMessageRequest, authorization: str | None = Header(default=None)):
+    return await proxy_to_worker("mamba", "/api/chats/send", payload.model_dump(), authorization)
+
+@app.get("/api/chats/{account_id}")
+async def api_get_chats(account_id: str):
+    return {"ok": True, "chats": []}
+
+# ── Sheet ─────────────────────────────────────────────────
+
+class SheetCellPayload(BaseModel):
+    sheet_id: str
+    cells: list[dict]
+
+class CheckKeysRequest(BaseModel):
+    keys: list[str]
+
+@app.post("/api/sheet/save")
+def api_sheet_save(payload: SheetCellPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    email = session["email"]
+    if not payload.cells:
+        return {"ok": True}
+    rows = []
+    for c in payload.cells:
+        row = {"owner_email": email, "sheet_id": payload.sheet_id, "row_idx": int(c.get("row", 0)), "col_idx": int(c.get("col", 0)), "value": c.get("value", "")}
+        if c.get("assigned_account_id"):
+            row["assigned_account_id"] = c.get("assigned_account_id")
+        rows.append(row)
+    empty_rows = [r for r in rows if not r.get("value")]
+    save_rows = [r for r in rows if r.get("value")]
+    for er in empty_rows:
+        supabase.table("sheet_cells").delete().eq("owner_email", email).eq("sheet_id", payload.sheet_id).eq("row_idx", er["row_idx"]).eq("col_idx", er["col_idx"]).execute()
+    if save_rows:
+        supabase.table("sheet_cells").upsert(save_rows, on_conflict="owner_email,sheet_id,row_idx,col_idx").execute()
+    return {"ok": True, "saved": len(save_rows)}
+
+@app.get("/api/sheet/load")
+def api_sheet_load(sheet_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("sheet_cells").select("*").eq("owner_email", session["email"]).eq("sheet_id", sheet_id).execute()
+    return {"ok": True, "cells": res.data or []}
+
+@app.post("/api/sheet/check-keys")
+def api_check_keys(payload: CheckKeysRequest, authorization: str | None = Header(default=None)):
+    require_auth(authorization)
+    from shared import call_groq, is_key_exhausted
+    results = {}
+    for key in payload.keys:
+        key = key.strip()
+        if not key:
+            continue
+        try:
+            call_groq(key, "llama-3.3-70b-versatile", "test", [{"role": "user", "content": "1"}])
+            results[key] = "ok"
+        except RuntimeError as e:
+            results[key] = "exhausted" if is_key_exhausted(str(e)) else "error"
+        except Exception:
+            results[key] = "error"
+    return {"ok": True, "results": results}
+
+# ── Report ────────────────────────────────────────────────
+
+class ReportTgAccountRequest(BaseModel):
+    tg_username: str
+    label: str = ""
+
+class ReportEntryRequest(BaseModel):
+    tg_account: str
+    date: str
+    visits: int = 0
+    bookings: int = 0
+    cancels: int = 0
+    notes: str = ""
+
+@app.get("/api/report/tg-accounts")
+def api_report_tg_accounts_get(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("report_tg_accounts").select("*").eq("owner_email", session["email"]).order("created_at").execute()
+    return {"ok": True, "accounts": res.data or []}
+
+@app.post("/api/report/tg-accounts")
+def api_report_tg_accounts_post(payload: ReportTgAccountRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    username = payload.tg_username.lstrip("@").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="tg_username обязателен")
+    try:
+        res = supabase.table("report_tg_accounts").insert({"owner_email": session["email"], "tg_username": username, "label": payload.label}).execute()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "account": res.data[0] if res.data else {}}
+
+@app.delete("/api/report/tg-accounts/{account_id}")
+def api_report_tg_accounts_delete(account_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    supabase.table("report_tg_accounts").delete().eq("id", account_id).eq("owner_email", session["email"]).execute()
+    return {"ok": True}
+
+@app.get("/api/report/entries")
+def api_report_entries_get(month: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    try:
+        year, mon = month.split("-")
+        date_from = f"{year}-{mon}-01"
+        next_mon = int(mon) + 1
+        next_year = int(year)
+        if next_mon > 12:
+            next_mon = 1
+            next_year += 1
+        date_to = f"{next_year}-{next_mon:02d}-01"
+    except Exception:
+        raise HTTPException(status_code=400, detail="month должен быть в формате YYYY-MM")
+    res = supabase.table("report_entries").select("*").eq("owner_email", session["email"]).gte("date", date_from).lt("date", date_to).order("date").execute()
+    return {"ok": True, "entries": res.data or []}
+
+@app.post("/api/report/entries")
+def api_report_entries_post(payload: ReportEntryRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    try:
+        res = supabase.table("report_entries").upsert({"owner_email": session["email"], "tg_account": payload.tg_account, "date": payload.date, "visits": payload.visits, "bookings": payload.bookings, "cancels": payload.cancels, "notes": payload.notes, "updated_at": datetime.utcnow().isoformat()}, on_conflict="owner_email,tg_account,date").execute()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"ok": True, "entry": res.data[0] if res.data else {}}
+
+@app.get("/api/report/summary")
+def api_report_summary(month: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    try:
+        year, mon = month.split("-")
+        date_from = f"{year}-{mon}-01"
+        next_mon = int(mon) + 1
+        next_year = int(year)
+        if next_mon > 12:
+            next_mon = 1
+            next_year += 1
+        date_to = f"{next_year}-{next_mon:02d}-01"
+    except Exception:
+        raise HTTPException(status_code=400, detail="month должен быть в формате YYYY-MM")
+    tg_res = supabase.table("report_tg_accounts").select("*").eq("owner_email", session["email"]).execute()
+    entries_res = supabase.table("report_entries").select("*").eq("owner_email", session["email"]).gte("date", date_from).lt("date", date_to).execute()
+    entries_map = {(e["tg_account"], e["date"]): e for e in (entries_res.data or [])}
+    from datetime import date as dt_date, timedelta
+    start = dt_date(int(year), int(mon), 1)
+    days = []
+    cur = start
+    while cur.month == start.month:
+        days.append(cur.isoformat())
+        cur += timedelta(days=1)
+    rows = []
+    for day in days:
+        for acc in (tg_res.data or []):
+            username = acc["tg_username"].lstrip("@").lower()
+            entry = entries_map.get((acc["tg_username"], day), entries_map.get((username, day), {}))
+            rows.append({"date": day, "tg_account": acc["tg_username"], "label": acc.get("label", ""), "leads": 0, "visits": entry.get("visits", 0) or 0, "bookings": entry.get("bookings", 0) or 0, "cancels": entry.get("cancels", 0) or 0, "conversion": 0.0})
+    return {"ok": True, "rows": rows, "month": month}
 
 # ── Groq error ────────────────────────────────────────────
 
