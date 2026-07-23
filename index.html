@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CLAW-AI MANAGER</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
+    <link rel="stylesheet" href="./style.css" />
+    <style>
+    .page { display: none; }
+    .page.activePage { display: block; }
+    #tablesPage.activePage { display: flex !important; flex-direction: column; }
+  </style>
+</head>
+  <body>
+
+    <!-- Экран входа / регистрации -->
+    <div class="authOverlay" id="authOverlay" style="display:flex;">
+      <div id="authLoadingScreen" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:10;background:var(--bg);">
+        <div style="font:700 13px 'Orbitron',sans-serif;color:var(--accent3);letter-spacing:0.1em;opacity:0.7;">ЗАГРУЗКА...</div>
+      </div>
+      <canvas id="authCanvas"></canvas>
+      <div class="authChatLayer" id="authChatLayer"></div>
+      <div class="authBox">
+        <div class="authLogo">
+          <div class="logoMark">C</div>
+          <div>
+            <b>CLAW-AI</b>
+            <span>Manager</span>
+          </div>
+        </div>
+
+        <div class="authTabs">
+          <button class="authTab active" id="authTabLogin">Вход</button>
+          <button class="authTab" id="authTabRegister">Регистрация</button>
+        </div>
+
+        <!-- Форма входа -->
+        <form class="authForm" id="loginForm">
+          <label>Email
+            <input type="email" id="loginEmail" placeholder="you@example.com" required />
+          </label>
+          <label>Пароль
+           <input type="password" id="loginPassword" placeholder="••••••••" required />
+          </label>
+          <label>Код доступа
+            <input type="text" id="loginAccessCode" placeholder="Уникальный код" required />
+          </label>
+          <button class="primary" type="submit" id="loginBtn">Войти</button>
+          <div class="authError" id="loginError"></div>
+        </form>
+
+        <!-- Форма регистрации -->
+        <form class="authForm" id="registerForm" style="display:none;">
+          <label>Имя
+            <input type="text" id="registerUsername" placeholder="Например: Иван" required />
+          </label>
+          <label>Email
+            <input type="email" id="registerEmail" placeholder="you@example.com" required />
+          </label>
+           <label>Пароль
+            <input type="password" id="registerPassword" placeholder="Минимум 6 символов" required />
+           </label>
+           <label>Код доступа
+             <input type="text" id="registerAccessCode" placeholder="Уникальный код" required />
+           </label>
+           <button class="primary" type="submit" id="registerBtn">Зарегистрироваться</button>
+           <div class="authError" id="registerError"></div>
+        </form>
+      </div>
+    </div>
+
+    <canvas id="bgCanvas"></canvas>
+    <div class="bgGlow"></div>
+
+    <div id="groqErrorBanner" style="display:none;position:fixed;top:16px;right:16px;max-width:340px;z-index:5000;padding:14px 16px;border-radius:12px;background:rgba(244,63,94,0.12);border:1px solid rgba(244,63,94,0.4);backdrop-filter:blur(16px);box-shadow:0 8px 32px rgba(244,63,94,0.2);">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+        <div style="font:700 11px 'Orbitron',sans-serif;color:#fb7185;letter-spacing:0.06em;">GROQ ОШИБКА</div>
+        <button id="groqErrorClose" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;line-height:1;">✕</button>
+      </div>
+      <div id="groqErrorText" style="margin-top:6px;font:400 12px 'Space Grotesk',sans-serif;color:#fecdd3;line-height:1.5;"></div>
+    </div>
+
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logoMark">C</div>
+        <div>
+          <b>CLAW-AI</b>
+          <span>Manager</span>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <button class="navBtn active" data-page="home">Главная</button>
+        <button class="navBtn" data-page="accounts">Анкеты</button>
+        <button class="navBtn" data-page="ai">AI-Менеджер</button>
+        <button class="navBtn" data-page="tasks">Чаты</button>
+        <button class="navBtn" data-page="analytics">Отчёт</button>
+        <button class="navBtn" data-page="tables">Таблица</button>
+        <button class="navBtn" data-page="settings">Настройки</button>
+      </nav>
+
+      <div class="userCard" id="userCardBtn" style="cursor:pointer;">
+        <div class="userAvatar">И</div>
+        <div>
+          <b>Иван</b>
+          <span id="userCardEmail">admin account</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Модалка подтверждения удаления вкладки -->
+    <div class="modalBackdrop" id="deleteTabModal">
+      <div class="modal" style="max-width:340px;">
+        <div class="modalHead">
+          <span>Удаление вкладки</span>
+          <button class="modalClose" id="deleteTabModalClose">✕</button>
+        </div>
+        <div class="modalBody">
+          <p style="font:400 13px/1.6 'Space Grotesk',sans-serif;color:var(--text2);">
+            Удалить вкладку «<span id="deleteTabName" style="color:var(--text);font-weight:600;"></span>»? Анкеты внутри неё не удалятся, просто пропадёт метка.
+          </p>
+          <div style="display:flex;gap:8px;margin-top:18px;">
+            <button class="ghost" id="deleteTabCancelBtn" style="flex:1;">Отмена</button>
+            <button class="small danger" id="deleteTabConfirmBtn" style="flex:1;padding:10px;">Удалить</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка профиля -->
+    <div class="modalBackdrop" id="profileModal">
+      <div class="modal">
+        <div class="modalHead">
+          <span>Профиль</span>
+          <button class="modalClose" id="profileModalClose">✕</button>
+        </div>
+        <div class="modalBody">
+          <label>Email
+            <input id="profileEmail" disabled style="margin-top:6px;" />
+          </label>
+          <label style="margin-top:10px;">Имя пользователя
+            <input id="profileUsername" placeholder="Например: Иван" style="margin-top:6px;" />
+          </label>
+          <button class="taskRunBtn" id="profileChangeUsernameBtn" style="margin-top:10px;">Сохранить имя</button>
+          <div class="result" id="profileUsernameResult" style="margin-top:8px;"></div>
+          <label style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px;">Текущий пароль
+            <input type="password" id="profileCurrentPassword" placeholder="••••••••" style="margin-top:6px;" />
+          </label>
+          <label>Новый пароль
+            <input type="password" id="profileNewPassword" placeholder="Минимум 6 символов" style="margin-top:6px;" />
+          </label>
+          <button class="taskRunBtn" id="profileChangePasswordBtn" style="margin-top:16px;">Сменить пароль</button>
+          <div class="result" id="profileChangeResult" style="margin-top:10px;"></div>
+          <button class="small danger" id="profileLogoutBtn" style="margin-top:18px;width:100%;">Выйти из аккаунта</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="notificationsBell" style="
+    position:fixed;
+    top:18px;
+    right:24px;
+    z-index:999;
+    cursor:pointer;
+    font-size:22px;
+    ">
+      🔔
+      <span id="notificationsCount" style="
+      position:absolute;
+      top:-6px;
+      right:-10px;
+      background:#ef4444;
+      color:white;
+      font-size:10px;
+      border-radius:999px;
+      padding:2px 6px;
+      display:none;
+      ">
+        0
+      </span>
+    </div>
+
+    <main class="app" id="mainApp" style="display:none;">
+
+      <!-- ── ГЛАВНАЯ ── -->
+      <section class="page activePage" id="homePage">
+        <div class="platformBtns" id="platformBtnsRow">
+          <button class="platformBtn active" data-platform="Mamba">Mamba</button>
+          <button class="platformBtn" data-platform="Twinby">Twinby</button>
+          <button class="platformBtn" data-platform="Vznakomstve">Взнакомстве</button>
+          <button class="platformBtn" data-platform="Travel">Travel</button>
+          <button class="platformBtn" data-platform="Badanga">Badanga</button>
+          <button class="platformBtn" data-platform="Lovelaz">Lovelaz</button>
+          <span id="tabsDivider" style="width:1px;align-self:stretch;background:var(--border2);margin:0 4px;display:none;"></span>
+          <span id="operatorTabsContainer" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
+          <button class="platformBtn" id="addTabBtn" title="Добавить вкладку" style="width:36px;padding:7px 0;text-align:center;">+</button>
+        </div>
+        <section class="homeLayout">
+
+          <!-- Форма подключения -->
+          <form class="panel connectPanel" id="connectForm">
+            <div class="panelHead connectToggle" id="connectToggle">
+              <h2>Подключить анкету</h2>
+              <span class="connectArrow">▼</span>
+            </div>
+            <div class="connectBody" id="connectBody" style="display:none;padding:18px 18px 20px;flex-direction:column;gap:0;">
+              <div id="connectSlots"></div>
+
+              <button type="button" class="secondary" id="addSlotBtn" style="margin:8px 0 14px;">+ Добавить ещё анкету</button>
+
+              <button class="primary" type="submit" id="connectBtn">Подключить и достать фото</button>
+              <p class="hint">Backend откроет профиль через Chromium, подставит cookies и попробует автоматически достать фото анкеты.</p>
+              <div class="result" id="resultBox">Готов к подключению.</div>
+            </div>
+
+            <template id="connectSlotTemplate">
+              <div class="connectSlot" style="border:1px solid var(--border2, rgba(255,255,255,.1));border-radius:10px;padding:14px;margin-bottom:14px;position:relative;">
+                <span class="slotRemoveBtn" title="Убрать" style="position:absolute;top:8px;right:10px;cursor:pointer;opacity:.5;font-size:16px;">✕</span>
+                <label>Название анкеты
+                  <input class="slotAccountName" placeholder="Например: Main account" />
+                </label>
+                <div class="slotStandardFields">
+                  <label>URL профиля / проверки
+                    <input class="slotCheckUrl" placeholder="https://love.mail.ru/profile/..." />
+                  </label>
+                  <label>Cookie-Editor JSON
+                    <textarea class="slotCookiesJson" placeholder='[{"name":"UID","value":"..."}]'></textarea>
+                  </label>
+                </div>
+                <div class="slotTwinbyFields" style="display:none;">
+                  <label>Email
+                    <input class="slotTwinbyEmail" placeholder="email@mail.ru" />
+                  </label>
+                  <button type="button" class="secondary slotTwinbySendCode" style="margin-bottom:10px;">Получить код</button>
+                  <label>Код из письма
+                    <input class="slotTwinbyCode" placeholder="123456" />
+                  </label>
+                </div>
+                <div class="slotVznFields" style="display:none;">
+                  <label>Email
+                    <input class="slotVznEmail" placeholder="email@mail.ru" />
+                  </label>
+                  <button type="button" class="secondary slotVznSendCode" style="margin-bottom:10px;">Получить код</button>
+                  <div class="slotVznCodeRow" style="display:none;">
+                    <label>Код из письма
+                      <input class="slotVznCode" placeholder="123456" />
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </form>
+
+          <!-- Сетка карточек -->
+          <section class="accountsGrid" id="accountsList">
+            <div class="gridEmpty" id="gridEmpty">
+              <div class="gridEmptyIcon"></div>
+              <b>Анкет пока нет</b>
+              <span>Подключи первую — она появится здесь карточкой</span>
+            </div>
+          </section>
+
+        </section>
+      </section>
+
+      <!-- ── АНКЕТЫ ── -->
+      <div class="bigPanel">
+
+  <div style="
+    background:rgba(255,255,255,.02);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:16px;
+    padding:24px;
+  ">
+
+<!-- ── AI-МЕНЕДЖЕР ── -->
+<section class="page" id="aiPage">
+  <div class="aiPageLayout">
+    <div class="aiPageHead" style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+      <h2>AI-Менеджер</h2>
+      <button class="addAnalyticsBtn" id="addAnalyticsBtn">+ Добавить</button>
+    </div>
+    <div class="analyticsGrid" id="analyticsGrid">
+      <div class="analyticsEmpty" id="analyticsEmpty">
+        <div class="gridEmptyIcon"></div>
+        <b>Аналитиков пока нет</b>
+        <span>Нажми "Добавить аналитика" чтобы создать первого</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+      <!-- ── ЧАТЫ ── -->
+      <section class="page" id="tasksPage">
+        <div class="bigPanel" id="chatsAccountsView">
+          <h2>Чаты</h2>
+          <p>Выбери анкету чтобы посмотреть её диалоги.</p>
+          <div id="chatsAccountsList" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;"></div>
+        </div>
+
+        <div class="bigPanel" id="chatsDialogsView" style="display:none;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <button class="ghost" id="chatsBackToAccounts">← Назад</button>
+            <h2 id="chatsDialogsAccountName" style="margin:0;">Диалоги</h2>
+          </div>
+          <p>Список диалогов из последнего сохранённого кэша.</p>
+          <div id="chatsDialogsList" style="margin-top:16px;display:flex;flex-direction:column;gap:8px;"></div>
+        </div>
+
+        <div class="bigPanel" id="chatsConversationView" style="display:none;">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+            <button class="ghost" id="chatsBackToDialogs">← Назад</button>
+            <h2 id="chatsConversationTitle" style="margin:0;">Переписка</h2>
+          </div>
+          <div id="chatsMessagesList" style="margin-top:16px;display:flex;flex-direction:column;gap:10px;max-height:420px;overflow-y:auto;padding:6px;"></div>
+          <div style="display:flex;gap:8px;margin-top:16px;">
+            <input id="chatsSendInput" placeholder="Написать сообщение..." style="flex:1;" />
+            <button class="primary" id="chatsSendBtn" style="margin-top:0;width:auto;padding:11px 22px;">Отправить</button>
+          </div>
+          <div class="result" id="chatsSendResult" style="margin-top:10px;"></div>
+        </div>
+      </section>
+
+      <!-- ── ОТЧЁТ ── -->
+      <section class="page" id="analyticsPage">
+
+        <!-- Шапка -->
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+          <h1 style="font-size:22px;margin:0;">Отчёт</h1>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="ghost" id="reportToggleBtn">📋 Весь месяц</button>
+            <button class="ghost" id="reportRefreshBtn">↻ Обновить</button>
+            <button class="ghost" id="reportAddAccountBtn">+ Добавить TG-аккаунт</button>
+          </div>
+        </div>
+
+        <!-- Вкладки месяцев -->
+        <div id="reportMonthTabs" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;"></div>
+
+        <!-- Таблица -->
+        <div class="panel" style="overflow-x:auto;">
+          <table id="reportTable" style="width:100%;border-collapse:collapse;min-width:580px;table-layout:fixed;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border2);">
+                <th class="rTh">Дата</th>
+                <th class="rTh">TG-аккаунт</th>
+                <th class="rTh">Лиды</th>
+                <th class="rTh">Заходы</th>
+                <th class="rTh">Брони</th>
+                <th class="rTh">Развороты</th>
+                <th class="rTh">Конверсия</th>
+                <th class="rTh"></th>
+              </tr>
+            </thead>
+            <tbody id="reportTableBody">
+              <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text2);">Загрузка...</td></tr>
+            </tbody>
+            <tfoot id="reportTableFoot"></tfoot>
+          </table>
+        </div>
+
+      </section>
+
+      <!-- Модалка добавления TG-аккаунта -->
+      <div class="modalBackdrop" id="reportAddAccountModal">
+        <div class="modal" style="max-width:380px;">
+          <div class="modalHead">
+            <span>Добавить TG-аккаунт</span>
+            <button class="modalClose" id="reportAddAccountModalClose">✕</button>
+          </div>
+          <div class="modalBody">
+            <label>@username
+              <input id="reportAddUsername" placeholder="@username" style="margin-top:6px;" />
+            </label>
+            <label style="margin-top:12px;">Название (необязательно)
+              <input id="reportAddLabel" placeholder="Например: Аня" style="margin-top:6px;" />
+            </label>
+            <button class="taskRunBtn" id="reportAddAccountSaveBtn" style="margin-top:16px;">Добавить</button>
+            <div class="result" id="reportAddAccountResult" style="margin-top:8px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── ТАБЛИЦА ── -->
+      <section class="page" id="tablesPage" style="padding:0;overflow:hidden;flex-direction:column;position:fixed;top:0;left:var(--sidebar-w);right:0;bottom:0;z-index:50;">
+        <div id="sheetApp" style="flex:1;display:flex;flex-direction:column;overflow:hidden;height:100%;width:100%;"></div>
+      </section>
+
+      <!-- Модалка: создать / переименовать таблицу -->
+      <div class="modal" id="keyTableModal" style="display:none;">
+        <div class="modalBox" style="max-width:420px;">
+          <button class="modalClose" id="keyTableModalClose">✕</button>
+          <h3 id="keyTableModalTitle">Новая таблица</h3>
+          <label style="margin-top:16px;">Название таблицы</label>
+          <input id="keyTableModalName" placeholder="Например: Groq основные" style="margin-top:6px;" />
+          <label style="margin-top:14px;">Тип ключей</label>
+          <select id="keyTableModalType" class="aiSelect" style="margin-top:6px;">
+            <option value="groq">Groq</option>
+            <option value="gemini">Gemini</option>
+            <option value="other">Другое</option>
+          </select>
+          <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="taskRunBtn" id="keyTableModalSave" style="flex:1;">Сохранить</button>
+            <button class="stopBtn" id="keyTableModalCancel" style="flex:1;">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Модалка: добавить ключ в таблицу -->
+      <div class="modal" id="keyAddModal" style="display:none;">
+        <div class="modalBox" style="max-width:460px;">
+          <button class="modalClose" id="keyAddModalClose">✕</button>
+          <h3 id="keyAddModalTitle">Добавить ключ</h3>
+          <label style="margin-top:16px;">API ключ</label>
+          <input id="keyAddModalValue" placeholder="gsk_..." style="margin-top:6px;font-family:monospace;font-size:12px;" />
+          <label style="margin-top:14px;">Заметка (необязательно)</label>
+          <input id="keyAddModalNote" placeholder="Например: основной рабочий" style="margin-top:6px;" />
+          <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="taskRunBtn" id="keyAddModalSave" style="flex:1;">Добавить</button>
+            <button class="stopBtn" id="keyAddModalCancel" style="flex:1;">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Модалка: прикрепить ключ к анкете -->
+      <div class="modal" id="keyAssignModal" style="display:none;">
+        <div class="modalBox" style="max-width:500px;">
+          <button class="modalClose" id="keyAssignModalClose">✕</button>
+          <h3>Прикрепить ключ к анкете</h3>
+          <p style="color:var(--text-muted);font-size:13px;margin:8px 0 16px;" id="keyAssignModalKeyLabel"></p>
+          <label>Выбери анкету</label>
+          <select id="keyAssignModalAccount" class="aiSelect" style="margin-top:6px;"></select>
+          <div id="keyAssignCurrentInfo" style="margin-top:12px;font-size:12px;color:var(--text-muted);"></div>
+          <div style="display:flex;gap:10px;margin-top:20px;">
+            <button class="taskRunBtn" id="keyAssignModalSave" style="flex:1;">Прикрепить</button>
+            <button class="stopBtn" id="keyAssignModalCancel" style="flex:1;">Отмена</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── НАСТРОЙКИ ── -->
+      <!-- СТАЛО: -->
+<section class="page" id="settingsPage">
+  <div class="bigPanel">
+    <h2>Настройки</h2>
+
+    <!-- ── ПРОКСИ ── -->
+    <div style="margin-top:24px;max-width:700px;">
+      <h3>Прокси</h3>
+      <p class="hint" style="margin-top:6px;margin-bottom:16px;">Настройки прокси для каждой платформы. Изменения применяются сразу — без редеплоя сервера.</p>
+
+      <div id="proxyList" style="display:flex;flex-direction:column;gap:12px;"></div>
+
+      <div id="proxySaveResult" style="margin-top:12px;font-size:13px;"></div>
+    </div>
+
+    <!-- ── КОМАНДА ── -->
+    <div style="margin-top:36px;max-width:700px;">
+      <h3>Команда</h3>
+      <label>Email пользователя</label>
+      <input id="teamInviteEmail" placeholder="user@example.com" style="margin-top:6px;" />
+      <label style="margin-top:12px;">Роль</label>
+      <select id="teamInviteRole" class="aiSelect">
+        <option value="manager">Менеджер</option>
+        <option value="viewer">Наблюдатель</option>
+      </select>
+      <button class="taskRunBtn" id="teamInviteBtn" style="margin-top:16px;">Отправить приглашение</button>
+      <div class="result" id="teamInviteResult" style="margin-top:10px;"></div>
+    </div>
+
+    <div style="margin-top:30px;max-width:700px;">
+      <h3>Участники команды</h3>
+      <div id="teamMembersList"></div>
+    </div>
+
+  </div>
+</section>
+    </main>
+
+    <!-- Шаблон старой карточки (для страницы Анкеты) -->
+    <template id="accountTemplate">
+      <article class="accountCard">
+        <div class="profilePhotoWrap">
+          <img class="profilePhoto" alt="" />
+          <div class="profileFallback">AI</div>
+        </div>
+        <div class="cardInfo">
+          <div class="cardTop">
+            <h3></h3>
+            <span class="badge">VALID</span>
+          </div>
+          <p class="url"></p>
+          <div class="meta">
+            <span class="checked"></span>
+            <span class="cookies"></span>
+            <span class="images"></span>
+          </div>
+          <div class="actions">
+            <button class="small openBtn">Открыть</button>
+            <button class="small danger deleteBtn">Удалить</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <!-- Шаблон квадратной карточки на главной -->
+    <template id="squareCardTemplate">
+      <article class="sqCard">
+        <div class="sqPhoto">
+          <img class="sqImg" alt="" />
+          <div class="sqFallback">AI</div>
+          <div class="sqOverlay"></div>
+          <div class="sqBadge">VALID</div>
+        </div>
+        <div class="sqBody">
+          <div class="sqName" style="cursor:pointer;" title="Нажми чтобы редактировать"></div>
+          <div class="sqStats">
+           <div class="sqStat">
+            <span class="sqStatVal sqLikesVal">0</span>
+            <span class="sqStatLabel">лайков</span>
+           </div>
+           <div class="sqDivider"></div>
+           <div class="sqStat">
+             <span class="sqStatVal sqMsgsVal">0</span>
+             <span class="sqStatLabel">ответов</span>
+           </div>
+           <div class="sqDivider"></div>
+           <div class="sqStat">
+             <span class="sqStatVal sqContactsVal">0</span>
+             <span class="sqStatLabel">лидов</span>
+           </div>
+         </div>
+         <div class="sqSplitControl">
+           <input type="number" class="sqSplitInput" min="1" max="50" value="10" />
+           <button class="sqBtn sqSplitBtn">
+             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+             Сплит
+           </button>
+         </div>
+          <div class="sqResult"></div>
+          <div class="sqDeleteWrap">
+            <button class="sqChainBtn">⛓ Скрещивание</button>
+            <button class="sqDeleteBtn">Удалить анкету</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <!-- Модалка лайков -->
+    <div class="modalBackdrop" id="likesModal">
+      <div class="modal">
+        <div class="modalHead">
+          <span>Запуск лайков</span>
+          <button class="modalClose" id="likesModalClose">✕</button>
+        </div>
+        <div class="modalBody">
+          <label>Количество лайков (макс. 100)
+            <input id="modalLikesLimit" type="number" min="1" max="100" value="10" style="width:140px;margin-top:6px;" />
+          </label>
+          <button class="taskRunBtn" id="modalRunLikesBtn" style="margin-top:16px;">▶ Дать лайки</button>
+          <div class="result" id="modalLikesResult" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модалка Groq -->
+    <div class="modalBackdrop" id="groqModal">
+      <div class="modal">
+        <div class="modalHead">
+          <span>Автоответы Groq AI</span>
+          <button class="modalClose" id="groqModalClose">✕</button>
+        </div>
+        <div class="modalBody">
+          <p class="hint" style="margin-top:0;">Убедись что Groq API ключ и промты заполнены в AI-Менеджере для этой анкеты.</p>
+          <button class="taskRunBtn taskRunBtn--green" id="modalRunGroqBtn" style="margin-top:16px;">▶ Запустить автоответы</button>
+          <div class="result" id="modalGroqResult" style="margin-top:10px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+      const layer = document.getElementById('authChatLayer');
+      if (!layer) return;
+
+      function randomBetween(min, max) { return min + Math.random() * (max - min); }
+
+      function spawnLogoFlash() {
+        const el = document.createElement('div');
+        el.className = 'authLogoFlash';
+        el.textContent = 'CLAW-AI';
+        el.style.visibility = 'hidden';
+        layer.appendChild(el);
+
+        // Сначала измеряем реальную ширину текста, чтобы не выйти за край экрана
+        const elWidth  = el.offsetWidth  || 160;
+        const elHeight = el.offsetHeight || 40;
+        const maxLeft = Math.max(window.innerWidth  - elWidth  - 12, 12);
+        const maxTop  = Math.max(window.innerHeight - elHeight - 12, 12);
+
+        el.style.left = randomBetween(12, maxLeft) + 'px';
+        el.style.top  = randomBetween(12, maxTop)  + 'px';
+        el.style.visibility = 'visible';
+
+        setTimeout(() => el.remove(), 3200);
+      }
+
+      setTimeout(spawnLogoFlash, 1500);
+      setInterval(spawnLogoFlash, 5000);
+    })();
+    </script>
+
+    <script>
+    (function() {
+      const canvas = document.getElementById('authCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+
+      let W = 0, H = 0;
+      function resize() {
+        W = canvas.width  = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+      }
+      resize();
+      window.addEventListener('resize', resize);
+
+      // ── Слой 1: печатающийся код (упрощённая версия) ──
+      const codeSnippets = [
+        'const lead = await matchProfile(account);',
+        'if (lead.score > 0.8) sendLike(lead.id);',
+        'await groq.chat({ persona, message });',
+        'contacts.push({ name, telegram, ts: Date.now() });',
+        'session.token = createSession(user.id);',
+        'stats.liked++; stats.replied++;',
+        'export async function runLikes(limit) {',
+        '  for (let i = 0; i < limit; i++) await likeNext();',
+        '}',
+        'auth.verify(password, user.password_hash);',
+      ];
+      const FONT_SIZE = 12;
+      let codeCols = [];
+      function initCode() {
+        const colCount = Math.ceil(W / 460);
+        codeCols = [];
+        for (let i = 0; i < colCount; i++) {
+          codeCols.push({
+            x: (i / colCount) * W + Math.random() * 60 - 30,
+            y: -Math.random() * H,
+            speed: 0.16 + Math.random() * 0.18,
+            lineIndex: Math.floor(Math.random() * codeSnippets.length),
+            charIndex: 0,
+            opacity: 0.22 + Math.random() * 0.22,
+            displayLines: [],
+            tick: 0,
+            charDelay: Math.floor(Math.random() * 3) + 1,
+          });
+        }
+      }
+      initCode();
+      window.addEventListener('resize', initCode);
+
+      function drawCode() {
+        ctx.font = `300 ${FONT_SIZE}px "JetBrains Mono", monospace`;
+        for (const col of codeCols) {
+          col.tick++;
+          if (col.tick % col.charDelay === 0) {
+            const line = codeSnippets[col.lineIndex];
+            if (col.charIndex < line.length) {
+              col.charIndex++;
+              const partial = line.slice(0, col.charIndex);
+              if (col.displayLines.length === 0) col.displayLines.push(partial);
+              else col.displayLines[col.displayLines.length - 1] = partial;
+            } else {
+              col.charIndex = 0;
+              col.lineIndex = (col.lineIndex + 1) % codeSnippets.length;
+              col.displayLines.push('');
+              if (col.displayLines.length > 8) col.displayLines.shift();
+            }
+          }
+          col.y += col.speed;
+          if (col.y > H + 160) {
+            col.y = -80 - Math.random() * 200;
+            col.displayLines = [];
+            col.charIndex = 0;
+          }
+          let yDraw = col.y;
+          const total = col.displayLines.length;
+          col.displayLines.forEach((line, i) => {
+            const fade = (i + 1) / total;
+            ctx.fillStyle = `rgba(92,110,248,${col.opacity * fade})`;
+            ctx.fillText(line, col.x, yDraw);
+            yDraw += FONT_SIZE + 5;
+          });
+        }
+      }
+
+      // ── Слой 2: кардиограмма-пульс в перспективе ──
+      const pulseLines = [
+        { yRatio: 0.30, scale: 0.85, speed: 1.6, color: '34,211,238',  alpha: 0.45 },
+        { yRatio: 0.50, scale: 1.3,  speed: 2.1, color: '92,110,248',  alpha: 0.65 },
+        { yRatio: 0.70, scale: 1.7,  speed: 2.6, color: '16,245,168',  alpha: 0.40 },
+      ];
+      let pulseT = 0;
+
+      function pulseShape(x) {
+        // форма одного "удара" ЭКГ на повторяющемся периоде
+        const p = x % 220;
+        if (p > 90 && p < 100) return (p - 90) * -3.2;
+        if (p >= 100 && p < 106) return -32 + (p - 100) * 9.2;
+        if (p >= 106 && p < 112) return 23 - (p - 106) * 4.5;
+        if (p >= 112 && p < 118) return -4 + (p - 112) * 0.7;
+        return 0;
+      }
+
+      function drawPulse() {
+        pulseT += 1;
+        for (const line of pulseLines) {
+          const baseY = H * line.yRatio;
+          ctx.beginPath();
+          ctx.lineWidth = 2.2 * line.scale;
+          ctx.strokeStyle = `rgba(${line.color},${line.alpha})`;
+          ctx.shadowColor = `rgba(${line.color},${Math.min(line.alpha * 1.8, 1)})`;
+          ctx.shadowBlur = 14 * line.scale;
+          for (let x = 0; x <= W; x += 4) {
+            const shift = (x + pulseT * line.speed);
+            const y = baseY + pulseShape(shift) * line.scale;
+            if (x === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+      }
+
+      function loop() {
+        ctx.clearRect(0, 0, W, H);
+        drawCode();
+        drawPulse();
+        requestAnimationFrame(loop);
+      }
+      loop();
+    })();
+    </script>
+
+    <script>
+    (function() {
+      const layer = document.getElementById('authChatLayer');
+      if (!layer) return;
+
+      const dialogues = [
+        ["Привет! Как дела? 😊", "Отлично! А у тебя?"],
+        ["Чем занимаешься?", "Просто скроллю ленту, а ты?"],
+        ["Какие планы на вечер?", "Пока никаких, есть идеи?"],
+        ["Ты из какого города?", "Из Москвы, а ты?"],
+        ["Понравилось твоё фото 👍", "Спасибо! Очень приятно"],
+        ["Может, познакомимся ближе?", "Давай, мне интересно"],
+        ["Что больше любишь — кино или прогулки?", "Прогулки, особенно вечером"],
+        ["Хочешь обменяться контактами?", "Конечно, пиши в телеграм"],
+      ];
+
+      function randomBetween(min, max) { return min + Math.random() * (max - min); }
+
+      function spawnDialogue() {
+        const [msgIn, msgOut] = dialogues[Math.floor(Math.random() * dialogues.length)];
+        const top = randomBetween(8, 78); // % от высоты
+        const leftIn  = randomBetween(4, 30);
+        const leftOut = randomBetween(58, 86);
+
+        const bubbleIn = document.createElement('div');
+        bubbleIn.className = 'authBubble in';
+        bubbleIn.textContent = msgIn;
+        bubbleIn.style.top  = top + '%';
+        bubbleIn.style.left = leftIn + '%';
+        layer.appendChild(bubbleIn);
+
+        setTimeout(() => {
+          const bubbleOut = document.createElement('div');
+          bubbleOut.className = 'authBubble out';
+          bubbleOut.textContent = msgOut;
+          bubbleOut.style.top  = (top + randomBetween(6, 10)) + '%';
+          bubbleOut.style.left = leftOut + '%';
+          layer.appendChild(bubbleOut);
+          setTimeout(() => bubbleOut.remove(), 4500);
+        }, 900);
+
+        setTimeout(() => bubbleIn.remove(), 4500);
+      }
+
+      spawnDialogue();
+      setInterval(spawnDialogue, 3200);
+    })();
+    </script>
+
+    <!-- Шаблон карточки аналитика -->
+<template id="analyticsCardTemplate">
+  <div class="analyticsCard">
+    <div class="analyticsCardHead">
+      <div>
+        <div class="analyticsCardName"></div>
+        <div class="analyticsCardAccount"></div>
+      </div>
+      <button class="analyticsCardDelete">✕</button>
+    </div>
+    <div class="analyticsCardBody">
+      <div class="analyticsCardRow"><span class="analyticsLabel">Контакт</span><span class="analyticsVal analyticsContact"></span></div>
+      <div class="analyticsCardRow"><span class="analyticsLabel">Стиль</span><span class="analyticsVal analyticsPersona"></span></div>
+      <div class="analyticsCardRow"><span class="analyticsLabel">Цель</span><span class="analyticsVal analyticsGoal"></span></div>
+    </div>
+    <button class="analyticsEditBtn">Редактировать</button>
+  </div>
+</template>
+
+
+  <!-- Модалка создания/редактирования аналитика -->
+<div class="modalBackdrop" id="analyticsModal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modalHead">
+      <span>Настройки аналитика</span>
+      <button class="modalClose" id="analyticsModalClose">✕</button>
+    </div>
+    <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;">
+      <label>Анкета
+        <select id="aModalAccountSelect" class="aiSelect" style="margin-top:6px;"></select>
+      </label>
+      <label style="display:none;">Groq API ключи (каждый на новой строке)
+        <textarea id="aModalGroqKey" 
+          placeholder="gsk_ключ1...&#10;gsk_ключ2...&#10;gsk_ключ3..." 
+          rows="4"
+          style="min-height:80px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);"></textarea>
+      </label>
+      <label>Модель
+        <input id="aModalGroqModel" value="llama-3.3-70b-versatile" />
+      </label>
+      <label style="display:none;">Gemini API ключи (каждый на новой строке)
+        <textarea id="aModalGeminiKeys" 
+          placeholder="AIza_ключ1...&#10;AIza_ключ2...&#10;AIza_ключ3..." 
+          rows="3"
+          style="min-height:70px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);"></textarea>
+      </label>
+      <label>Имя
+       <input id="aModalBotName" placeholder="Например: Анна" />
+      </label>
+      <label>Возраст
+       <input id="aModalBotAge" placeholder="Например: 24" />
+      </label>
+      <label>Пол
+       <select id="aModalBotGender" class="aiSelect" style="margin-top:6px;">
+        <option value="female">Девушка</option>
+        <option value="male">Парень</option>
+       </select>
+      </label>
+      <label>Местоположение (город, район/улица)
+       <input id="aModalLocation" placeholder="Например: Москва, ул. Радужная 5" />
+      </label>
+      <label>Личность / стиль
+        <textarea id="aModalPersona" placeholder="Игривая, уверенная..." style="min-height:60px;"></textarea>
+      </label>
+      <label>Цель диалога
+        <textarea id="aModalGoal" placeholder="Цель: вовлечь в переписку..." style="min-height:60px;"></textarea>
+      </label>
+      <label>Стоп-темы
+        <input id="aModalStopTopics" placeholder="деньги, фото интимное..." />
+      </label>
+      <label>Контакты
+        <input id="aModalContacts" placeholder="Telegram: @username..." />
+      </label>
+      <label>Условие отдачи контактов
+        <input id="aModalContactsTrigger" placeholder="Если человек просит..." />
+      </label>
+      <label>Telegram chat_id для уведомлений
+        <input id="aModalTgChatId" placeholder="Например: 123456789" />
+      </label>
+      <button class="taskRunBtn" id="aModalSaveBtn" style="margin-top:16px;">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div class="modalBackdrop" id="notificationsModal">
+  <div class="modal">
+
+    <div class="modalHead">
+      <span>Уведомления</span>
+      <button
+        class="modalClose"
+        id="notificationsModalClose"
+      >
+        ✕
+      </button>
+    </div>
+
+    <div
+      class="modalBody"
+      id="notificationsList"
+    >
+    </div>
+
+  </div>
+</div>
+
+<!-- Модалка скрещивания -->
+<div class="modalBackdrop" id="chainModal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modalHead">
+      <span id="chainModalTitle">Цепочка резервов</span>
+      <button class="modalClose" id="chainModalClose">✕</button>
+    </div>
+    <div class="modalBody">
+      <p class="hint" style="margin-top:0;">Если эта анкета заблокируется — следующая в цепочке автоматически встанет на её место и запустит сплит.</p>
+      <div id="chainModalList" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</div>
+
+<script src="./app.js"></script>
+
+  </body>
+</html>

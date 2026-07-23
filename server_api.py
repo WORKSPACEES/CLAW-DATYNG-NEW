@@ -1,0 +1,681 @@
+# server_api.py — главный API сервер CLAW-DATYNG
+# Отвечает за: авторизацию, аккаунты, настройки, фронтенд
+# Проксирует задачи на воркер-серверы платформ
+# Запуск: uvicorn server_api:app --host 0.0.0.0 --port 8001
+
+import asyncio
+import json
+import re
+import secrets
+import time
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+from urllib import request, error
+from urllib.parse import urljoin
+
+import httpx
+from fastapi import FastAPI, HTTPException, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from shared import (
+    supabase, leads_supabase, require_auth, get_session, create_session,
+    hash_password, verify_password, get_ai_settings, save_ai_settings,
+    get_team_owner_emails, get_groq_keys, get_gemini_keys,
+    append_task_log, build_system_prompt, CANCEL_FLAGS, ACCESS_CODE,
+    push_split_log_sync,
+)
+
+# ── URL воркер-серверов ───────────────────────────────────
+# Замени на реальные URL после деплоя на Render
+MAMBA_SERVER_URL      = "http://localhost:8002"
+LOVELAZ_SERVER_URL    = "http://localhost:8003"
+TWINBY_SERVER_URL     = "http://localhost:8004"
+VZNAKOMSTVE_SERVER_URL = "http://localhost:8005"
+
+PLATFORM_URLS = {
+    "mamba":        MAMBA_SERVER_URL,
+    "lovelaz":      LOVELAZ_SERVER_URL,
+    "twinby":       TWINBY_SERVER_URL,
+    "vznakomstve":  VZNAKOMSTVE_SERVER_URL,
+}
+
+BASE_DIR = Path(__file__).resolve().parent
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+
+app = FastAPI(title="CLAW-AI API Server")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ── Helper: проксирование на воркер ──────────────────────
+
+async def proxy_to_worker(platform: str, path: str, payload: dict, authorization: str = None) -> dict:
+    """Проксирует запрос на нужный воркер-сервер."""
+    base_url = PLATFORM_URLS.get(platform.lower())
+    if not base_url:
+        raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform}")
+    
+    headers = {"Content-Type": "application/json"}
+    if authorization:
+        headers["Authorization"] = authorization
+
+    try:
+        async with httpx.AsyncClient(timeout=300) as client:
+            resp = await client.post(f"{base_url}{path}", json=payload, headers=headers)
+            return resp.json()
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail=f"Воркер {platform} недоступен")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ── Pydantic Models ───────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    access_code: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class UpdateProfileRequest(BaseModel):
+    username: str = ""
+
+class AiSettingsPayload(BaseModel):
+    groq_api_key: str = ""
+    groq_api_keys: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
+    bot_name: str = ""
+    bot_age: str = ""
+    bot_gender: str = "female"
+    location: str = ""
+    persona: str = ""
+    goal: str = ""
+    stop_topics: str = ""
+    contacts: str = ""
+    contacts_trigger: str = ""
+    tg_chat_id: str = ""
+    gemini_api_keys: str = ""
+
+class LikesTaskRequest(BaseModel):
+    account_id: str
+    limit: int = 10
+    platform: str = "mamba"
+
+class AutoReplyTaskRequest(BaseModel):
+    account_id: str
+    max_dialogs: int = 20
+    platform: str = "mamba"
+
+class StopTaskRequest(BaseModel):
+    account_id: str
+
+class TeamInviteRequest(BaseModel):
+    email: str
+    role: str = "manager"
+
+class AcceptInviteRequest(BaseModel):
+    invite_id: str
+    email: str = ""
+
+class RejectInviteRequest(BaseModel):
+    invite_id: str
+    email: str = ""
+
+class CreateTabRequest(BaseModel):
+    name: str
+    platform: str = "Mamba"
+
+class AssignTabRequest(BaseModel):
+    account_id: str
+    tab_id: str
+
+class AccountRunStatusPayload(BaseModel):
+    run_status: str = "idle"
+    run_task: str = ""
+    run_note: str = ""
+
+class AccountUpdateRequest(BaseModel):
+    name: str | None = None
+
+class SplitLogPushRequest(BaseModel):
+    account_id: str
+    messages: list[str]
+
+class ReportTgAccountRequest(BaseModel):
+    tg_username: str
+    label: str = ""
+
+class ReportEntryRequest(BaseModel):
+    tg_account: str
+    date: str
+    visits: int = 0
+    bookings: int = 0
+    cancels: int = 0
+    notes: str = ""
+
+class ProxySettingsModel(BaseModel):
+    id: str
+    host: str
+    port: int
+    username: str
+    password: str
+    use_proxy: bool = True
+    user_agent: str = ""
+
+class ConnectAccountRequest(BaseModel):
+    account_name: str
+    profile_url: str
+    cookies_raw: str = ""
+    platform: str = "Mamba"
+    twinby_email: str = ""
+    twinby_code: str = ""
+    vzn_email: str = ""
+    vzn_code: str = ""
+
+class SetChainRequest(BaseModel):
+    account_id: str
+    chain: list[str]
+
+# ── Auth ──────────────────────────────────────────────────
+
+@app.post("/api/auth/register")
+def register(payload: RegisterRequest):
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Некорректный email")
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Пароль должен быть не менее 6 символов")
+    if payload.access_code.strip() != ACCESS_CODE:
+        raise HTTPException(status_code=403, detail="Неверный код доступа")
+    existing = supabase.table("app_users").select("id").eq("email", email).execute()
+    if existing.data:
+        raise HTTPException(status_code=409, detail="Пользователь уже зарегистрирован")
+    password_hash = hash_password(payload.password)
+    res = supabase.table("app_users").insert({"email": email, "password_hash": password_hash}).execute()
+    user = res.data[0]
+    token = create_session(user["id"], user["email"])
+    return {"ok": True, "token": token, "email": user["email"]}
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest):
+    email = payload.email.strip().lower()
+    res = supabase.table("app_users").select("*").eq("email", email).execute()
+    if not res.data:
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+    user = res.data[0]
+    if not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Неверный email или пароль")
+    token = create_session(user["id"], user["email"])
+    return {"ok": True, "token": token, "email": user["email"]}
+
+@app.get("/api/auth/me")
+def auth_me(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("app_users").select("username").eq("id", session["user_id"]).execute()
+    username = res.data[0].get("username") if res.data else ""
+    return {"ok": True, "email": session["email"], "username": username}
+
+@app.post("/api/auth/logout")
+def logout(authorization: str | None = Header(default=None)):
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization[len("Bearer "):].strip()
+        supabase.table("app_sessions").delete().eq("token", token).execute()
+    return {"ok": True}
+
+@app.post("/api/auth/update-profile")
+def api_update_profile(payload: UpdateProfileRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    if payload.username:
+        supabase.table("app_users").update({"username": payload.username}).eq("id", session["user_id"]).execute()
+    return {"ok": True}
+
+@app.post("/api/auth/change-password")
+def change_password(payload: ChangePasswordRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("app_users").select("*").eq("id", session["user_id"]).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    user = res.data[0]
+    if not verify_password(payload.current_password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Текущий пароль неверен")
+    if len(payload.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Новый пароль должен быть не менее 6 символов")
+    supabase.table("app_users").update({"password_hash": hash_password(payload.new_password)}).eq("id", user["id"]).execute()
+    return {"ok": True}
+
+# ── Accounts ──────────────────────────────────────────────
+
+@app.get("/api/accounts")
+def get_accounts(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    res = supabase.table("accounts").select("*").in_("owner_email", owner_emails).order("created_at", desc=True).execute()
+    return {"ok": True, "accounts": res.data or []}
+
+@app.patch("/api/accounts/{account_id}")
+def api_update_account(account_id: str, payload: AccountUpdateRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    account_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).execute()
+    if not account_res.data:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+    update_data = {}
+    if payload.name is not None:
+        update_data["name"] = payload.name
+    if update_data:
+        supabase.table("accounts").update(update_data).eq("id", account_id).execute()
+    return {"ok": True}
+
+@app.delete("/api/accounts/{account_id}")
+def delete_account(account_id: str):
+    supabase.table("accounts").delete().eq("id", account_id).execute()
+    return {"ok": True}
+
+@app.get("/api/accounts/reserved-ids")
+def api_get_reserved_ids(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    res = supabase.table("accounts").select("id, reserve_chain").in_("owner_email", owner_emails).execute()
+    reserved = set()
+    for row in res.data or []:
+        for rid in (row.get("reserve_chain") or []):
+            reserved.add(rid)
+    return {"ok": True, "reserved_ids": list(reserved)}
+
+@app.post("/api/accounts/check-statuses")
+async def api_check_account_statuses(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    accounts_res = supabase.table("accounts").select("id, is_blocked, platform").in_("owner_email", owner_emails).execute()
+
+    async def check_one(row):
+        account_id = row["id"]
+        platform = (row.get("platform") or "mamba").lower()
+        if row.get("is_blocked"):
+            return {"account_id": account_id, "status": "blocked", "skipped": True}
+        try:
+            base_url = PLATFORM_URLS.get(platform, MAMBA_SERVER_URL)
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(f"{base_url}/api/check-status/{account_id}")
+                return resp.json()
+        except Exception as e:
+            return {"account_id": account_id, "status": "unknown", "reason": str(e)}
+
+    results = await asyncio.gather(*(check_one(row) for row in (accounts_res.data or [])))
+    return {"ok": True, "results": results}
+
+@app.post("/api/accounts/{account_id}/run-status")
+def api_set_account_run_status(account_id: str, payload: AccountRunStatusPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    account_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).execute()
+    if not account_res.data:
+        raise HTTPException(status_code=403, detail="Нет доступа")
+    status = payload.run_status or "idle"
+    update_data = {"run_status": status, "run_task": payload.run_task or "", "run_note": payload.run_note or ""}
+    if status == "running":
+        update_data["run_started_by"] = session["email"]
+        update_data["run_started_at"] = datetime.now().isoformat()
+    else:
+        update_data["run_started_by"] = ""
+        update_data["run_started_at"] = None
+        update_data["run_note"] = ""
+    supabase.table("accounts").update(update_data).eq("id", account_id).execute()
+    return {"ok": True, "account_id": account_id, **update_data}
+
+@app.post("/api/accounts/{account_id}/chain")
+def api_set_chain(account_id: str, payload: SetChainRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    main_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).limit(1).execute()
+    if not main_res.data:
+        raise HTTPException(status_code=404, detail="Анкета не найдена")
+    clean_chain = [str(rid).strip() for rid in payload.chain if str(rid).strip() and str(rid).strip() != account_id]
+    clean_chain = list(dict.fromkeys(clean_chain))
+    supabase.table("accounts").update({"reserve_chain": clean_chain}).eq("id", account_id).execute()
+    return {"ok": True, "chain": clean_chain}
+
+@app.get("/api/accounts/{account_id}/chain")
+def api_get_chain(account_id: str):
+    res = supabase.table("accounts").select("reserve_chain").eq("id", account_id).execute()
+    if not res.data:
+        return {"ok": True, "chain": []}
+    return {"ok": True, "chain": res.data[0].get("reserve_chain") or []}
+
+# ── Connect Account ───────────────────────────────────────
+
+@app.post("/api/connect")
+async def connect_account(payload: ConnectAccountRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    platform_lower = payload.platform.strip().lower()
+
+    # Проксируем на нужный воркер для подключения
+    worker_url = PLATFORM_URLS.get(platform_lower)
+    if not worker_url:
+        raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
+
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.post(
+                f"{worker_url}/api/connect",
+                json=payload.model_dump(),
+                headers={"Authorization": authorization or ""}
+            )
+            return resp.json()
+    except httpx.ConnectError:
+        raise HTTPException(status_code=503, detail=f"Воркер {platform_lower} недоступен")
+
+# ── Tasks — проксируем на воркеры ────────────────────────
+
+@app.post("/api/tasks/likes-http")
+async def api_task_likes(payload: LikesTaskRequest, authorization: str | None = Header(default=None)):
+    platform = payload.platform.lower()
+    return await proxy_to_worker(platform, "/api/tasks/likes-http", payload.model_dump(), authorization)
+
+@app.post("/api/tasks/lovelaz-likes")
+async def api_task_lovelaz_likes(payload: LikesTaskRequest, authorization: str | None = Header(default=None)):
+    return await proxy_to_worker("lovelaz", "/api/tasks/lovelaz-likes", payload.model_dump(), authorization)
+
+@app.post("/api/tasks/auto-reply-http")
+async def api_task_auto_reply(payload: AutoReplyTaskRequest, authorization: str | None = Header(default=None)):
+    platform = payload.platform.lower()
+    return await proxy_to_worker(platform, "/api/tasks/auto-reply-http", payload.model_dump(), authorization)
+
+@app.post("/api/tasks/auto-reply-http-loop")
+async def api_task_auto_reply_loop(payload: AutoReplyTaskRequest, authorization: str | None = Header(default=None)):
+    platform = payload.platform.lower()
+    return await proxy_to_worker(platform, "/api/tasks/auto-reply-http-loop", payload.model_dump(), authorization)
+
+@app.post("/api/tasks/lovelaz-auto-reply")
+async def api_task_lovelaz_auto_reply(payload: AutoReplyTaskRequest, authorization: str | None = Header(default=None)):
+    return await proxy_to_worker("lovelaz", "/api/tasks/lovelaz-auto-reply", payload.model_dump(), authorization)
+
+@app.post("/api/tasks/stop")
+async def api_task_stop(payload: StopTaskRequest, authorization: str | None = Header(default=None)):
+    # Стоп на всех воркерах одновременно
+    async with httpx.AsyncClient(timeout=10) as client:
+        for url in PLATFORM_URLS.values():
+            try:
+                await client.post(f"{url}/api/tasks/stop", json={"account_id": payload.account_id})
+            except Exception:
+                pass
+    supabase.table("job_queue").update({"status": "cancelled"}).eq("account_id", payload.account_id).in_("status", ["pending", "running"]).execute()
+    return {"ok": True}
+
+# ── Twinby / Vznakomstve send-code ───────────────────────
+
+@app.post("/api/twinby/send-code")
+async def twinby_send_code(payload: dict, authorization: str | None = Header(default=None)):
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{TWINBY_SERVER_URL}/api/twinby/send-code", json=payload, headers={"Authorization": authorization or ""})
+        return resp.json()
+
+@app.post("/api/vznakomstve/send-code")
+async def vzn_send_code(payload: dict, authorization: str | None = Header(default=None)):
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{VZNAKOMSTVE_SERVER_URL}/api/vznakomstve/send-code", json=payload, headers={"Authorization": authorization or ""})
+        return resp.json()
+
+@app.post("/api/vznakomstve/verify-code")
+async def vzn_verify_code(payload: dict, authorization: str | None = Header(default=None)):
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(f"{VZNAKOMSTVE_SERVER_URL}/api/vznakomstve/verify-code", json=payload, headers={"Authorization": authorization or ""})
+        return resp.json()
+
+# ── AI Settings ───────────────────────────────────────────
+
+@app.get("/api/ai-settings/{account_id}")
+def api_get_ai_settings(account_id: str):
+    return {"ok": True, "settings": get_ai_settings(account_id)}
+
+@app.post("/api/ai-settings/{account_id}")
+def api_save_ai_settings(account_id: str, payload: AiSettingsPayload):
+    saved = save_ai_settings(account_id, payload.model_dump())
+    return {"ok": True, "settings": saved}
+
+# ── Tasks log / Stats ─────────────────────────────────────
+
+@app.get("/api/tasks-log")
+def api_tasks_log():
+    res = supabase.table("tasks_log").select("*").order("created_at", desc=True).limit(200).execute()
+    return {"ok": True, "logs": res.data or []}
+
+@app.get("/api/accounts-stats")
+def api_accounts_stats(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    accounts_res = supabase.table("accounts").select("id").in_("owner_email", owner_emails).execute()
+    account_ids = [a["id"] for a in (accounts_res.data or [])]
+    if not account_ids:
+        return {"ok": True, "stats": {}}
+    res = supabase.table("tasks_log").select("account_id, type, liked, replied, contacts_sent").in_("account_id", account_ids).execute()
+    stats: dict[str, dict] = {}
+    for row in (res.data or []):
+        acc_id = row.get("account_id")
+        if not acc_id:
+            continue
+        if acc_id not in stats:
+            stats[acc_id] = {"liked": 0, "replied": 0, "contacts": 0}
+        if row.get("type") == "likes":
+            stats[acc_id]["liked"] += int(row.get("liked") or 0)
+        if row.get("type") == "auto-reply-http":
+            stats[acc_id]["replied"] += int(row.get("replied") or 0)
+            stats[acc_id]["contacts"] += int(row.get("contacts_sent") or 0)
+    return {"ok": True, "stats": stats}
+
+# ── Notifications ─────────────────────────────────────────
+
+@app.get("/api/notifications")
+def api_get_notifications(authorization: str | None = Header(default=None)):
+    try:
+        session = require_auth(authorization)
+        res = supabase.table("notifications").select("*").eq("email", session["email"]).order("created_at", desc=True).limit(50).execute()
+        return {"ok": True, "notifications": res.data or []}
+    except Exception as e:
+        return {"ok": False, "notifications": [], "error": str(e)}
+
+# ── Team ──────────────────────────────────────────────────
+
+@app.post("/api/team/invite")
+def api_team_invite(payload: TeamInviteRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_email = session["email"].strip().lower()
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Некорректный email")
+    if owner_email == email:
+        raise HTTPException(status_code=400, detail="Нельзя пригласить самого себя")
+    invite_res = supabase.table("team_invites").insert({"owner_email": owner_email, "email": email, "role": payload.role, "status": "pending"}).execute()
+    invite = invite_res.data[0]
+    supabase.table("notifications").insert({"email": email, "type": "team_invite", "title": "Приглашение в команду", "message": f"{owner_email} приглашает вас в команду", "data": {"invite_id": invite["id"], "owner_email": owner_email, "role": payload.role}, "is_read": False}).execute()
+    return {"ok": True, "invite": invite}
+
+@app.post("/api/team/invite/accept")
+def api_accept_invite(payload: AcceptInviteRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    email = session["email"]
+    res = supabase.table("team_invites").select("*").eq("id", payload.invite_id).eq("email", email).eq("status", "pending").execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Приглашение не найдено")
+    invite = res.data[0]
+    supabase.table("team_members").upsert({"owner_email": invite["owner_email"], "member_email": email, "role": invite["role"], "status": "active"}).execute()
+    supabase.table("team_invites").update({"status": "accepted", "accepted_at": datetime.now().isoformat()}).eq("id", payload.invite_id).execute()
+    supabase.table("notifications").update({"is_read": True}).eq("email", email).eq("type", "team_invite").execute()
+    return {"ok": True}
+
+@app.post("/api/team/invite/reject")
+def api_reject_invite(payload: RejectInviteRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    email = session["email"]
+    supabase.table("team_invites").update({"status": "rejected"}).eq("id", payload.invite_id).eq("email", email).execute()
+    supabase.table("notifications").update({"is_read": True}).eq("email", email).eq("type", "team_invite").execute()
+    return {"ok": True}
+
+@app.get("/api/team/members")
+def api_team_members(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("team_members").select("*").eq("owner_email", session["email"]).order("created_at", desc=True).execute()
+    return {"ok": True, "members": res.data or []}
+
+# ── Tabs ──────────────────────────────────────────────────
+
+@app.get("/api/tabs")
+def api_get_tabs(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    res = supabase.table("operator_tabs").select("*").in_("owner_email", owner_emails).order("sort_order", desc=False).execute()
+    tabs = res.data or []
+    tab_ids = [t["id"] for t in tabs]
+    tags_by_tab = {}
+    if tab_ids:
+        tags_res = supabase.table("account_tabs").select("*").in_("tab_id", tab_ids).execute()
+        for row in tags_res.data or []:
+            tags_by_tab.setdefault(row["tab_id"], []).append(row["account_id"])
+    for t in tabs:
+        t["account_ids"] = tags_by_tab.get(t["id"], [])
+    return {"ok": True, "tabs": tabs}
+
+@app.post("/api/tabs")
+def api_create_tab(payload: CreateTabRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Название вкладки не может быть пустым")
+    count_res = supabase.table("operator_tabs").select("id").eq("owner_email", session["email"]).execute()
+    res = supabase.table("operator_tabs").insert({"owner_email": session["email"], "name": name, "platform": payload.platform or "Mamba", "sort_order": len(count_res.data or [])}).execute()
+    return {"ok": True, "tab": res.data[0]}
+
+@app.delete("/api/tabs/{tab_id}")
+def api_delete_tab(tab_id: str):
+    supabase.table("operator_tabs").delete().eq("id", tab_id).execute()
+    return {"ok": True}
+
+@app.post("/api/tabs/assign")
+def api_assign_tab(payload: AssignTabRequest):
+    supabase.table("account_tabs").upsert({"account_id": payload.account_id, "tab_id": payload.tab_id}).execute()
+    return {"ok": True}
+
+@app.post("/api/tabs/unassign")
+def api_unassign_tab(payload: AssignTabRequest):
+    supabase.table("account_tabs").delete().eq("account_id", payload.account_id).eq("tab_id", payload.tab_id).execute()
+    return {"ok": True}
+
+# ── Split logs ────────────────────────────────────────────
+
+@app.post("/api/split-log/push")
+def api_split_log_push(payload: SplitLogPushRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    if not payload.messages:
+        return {"ok": True}
+    rows = [{"owner_email": session["email"], "account_id": payload.account_id, "message": msg} for msg in payload.messages if msg]
+    supabase.table("split_logs").insert(rows).execute()
+    return {"ok": True, "saved": len(rows)}
+
+@app.get("/api/split-log/{account_id}")
+def api_split_log_get(account_id: str, after_id: int = 0, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    if after_id > 0:
+        query = supabase.table("split_logs").select("id, message, created_at").eq("account_id", account_id).gt("id", after_id).order("id", desc=False)
+    else:
+        query = supabase.table("split_logs").select("id, message, created_at").eq("account_id", account_id).order("id", desc=True).limit(200)
+    res = query.execute()
+    rows = res.data or []
+    if after_id == 0:
+        rows = list(reversed(rows))
+    return {"ok": True, "logs": rows, "last_id": rows[-1]["id"] if rows else after_id}
+
+# ── Proxy settings ────────────────────────────────────────
+
+@app.get("/api/proxy-settings")
+async def get_proxy_settings(authorization: str = Header(None)):
+    require_auth(authorization)
+    try:
+        res = supabase.table("proxy_settings").select("*").execute()
+        return res.data or []
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/proxy-settings")
+async def save_proxy_settings(body: ProxySettingsModel, authorization: str = Header(None)):
+    require_auth(authorization)
+    try:
+        supabase.table("proxy_settings").upsert({
+            "id": body.id, "host": body.host, "port": body.port,
+            "username": body.username, "password": body.password,
+            "use_proxy": body.use_proxy, "user_agent": body.user_agent,
+            "updated_at": datetime.utcnow().isoformat(),
+        }, on_conflict="id").execute()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ── Proxy image ───────────────────────────────────────────
+
+@app.get("/api/proxy-image")
+async def proxy_image(url: str, account_id: str = ""):
+    from fastapi.responses import Response
+    try:
+        headers = {"User-Agent": "InDating v3.2.6 (302060), Android 9, A5010", "Referer": "https://vznakomstve.com/"}
+        if "amazonaws.com" in url and account_id:
+            try:
+                res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
+                if res.data:
+                    raw = res.data[0].get("cookies_raw", "")
+                    cookies_list = json.loads(raw)
+                    for c in cookies_list:
+                        if c.get("name") == "x_token":
+                            headers["x-token"] = c["value"]
+                            break
+            except Exception:
+                pass
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(url, headers=headers)
+        return Response(content=r.content, media_type=r.headers.get("content-type", "image/jpeg"))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+# ── Groq error ────────────────────────────────────────────
+
+@app.get("/api/groq-error")
+def api_get_groq_error():
+    return {"ok": True, "error": None}
+
+@app.post("/api/groq-error/dismiss")
+def api_dismiss_groq_error():
+    return {"ok": True}
+
+# ── Health ────────────────────────────────────────────────
+
+@app.get("/health")
+def health():
+    return {"ok": True, "service": "api"}
+
+# ── Static files ──────────────────────────────────────────
+
+@app.get("/")
+def index():
+    return FileResponse(BASE_DIR / "index.html")
+
+app.mount("/data", StaticFiles(directory=DATA_DIR), name="data")
+app.mount("/", StaticFiles(directory=BASE_DIR), name="static")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
