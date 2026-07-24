@@ -188,7 +188,9 @@ def send_message(cookies: dict, user_id: str, message: str) -> dict:
         "message": message,
         "captcha": "1",
     }
-    return _api_request("POST", path, cookies, form=form)
+    resp = _api_request("POST", path, cookies, form=form)
+    print(f"[VZN SEND] user_id={user_id} status={resp.get('_status')} raw={str(resp)[:300]}", flush=True)
+    return resp
 
 
 def set_readed(cookies: dict, user_id: str) -> dict:
