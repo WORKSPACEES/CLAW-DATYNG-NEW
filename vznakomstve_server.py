@@ -1,5 +1,7 @@
 # vznakomstve_server.py — менеджер задач Vznakomstve
 import json, gzip
+from datetime import datetime
+import uuid
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -119,6 +121,60 @@ async def vzn_verify_code(payload: dict, authorization: str | None = Header(defa
         raise HTTPException(status_code=400, detail="Не удалось получить сессию")
     cookies_raw = json.dumps([{"name": "PHPSESSID", "value": phpsessid}])
     return {"ok": True, "cookies_raw": cookies_raw, "phpsessid": phpsessid}
+
+@app.post("/api/connect")
+async def connect_vznakomstve(payload: dict, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    
+    cookies_raw = (payload.get("cookies_raw") or "").strip()
+    account_name = (payload.get("account_name") or "Анкета").strip()
+    
+    if not cookies_raw:
+        raise HTTPException(status_code=400, detail="cookies_raw обязателен")
+    
+    from vznakomstve_client import parse_cookies as vzn_parse, get_profile_photo
+    from datetime import datetime
+    import uuid as _uuid
+    
+    cookies = vzn_parse(cookies_raw)
+    
+    photo_url = ""
+    try:
+        photo_url = get_profile_photo(cookies) or ""
+        print(f"[VZN CONNECT] фото: {photo_url}", flush=True)
+    except Exception as e:
+        print(f"[VZN CONNECT] фото не получено: {e}", flush=True)
+    
+    account_id = str(_uuid.uuid4())
+    
+    public_account = {
+        "id": account_id,
+        "owner_email": session["email"],
+        "platform": "Vznakomstve",
+        "name": account_name,
+        "profile_url": "https://vznakomstve.com/app/",
+        "final_url": "https://vznakomstve.com/app/",
+        "title": account_name,
+        "photo_url": photo_url,
+        "cookies_count": 1,
+        "cookies_valid": True,
+        "session_valid": True,
+        "session_reason": "Cookie авторизация",
+        "images_found": 0,
+        "checked_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    
+    supabase.table("accounts").insert(public_account).execute()
+    supabase.table("accounts_private").insert({
+        "id": account_id,
+        "cookies_raw": cookies_raw
+    }).execute()
+    
+    return {
+        "ok": True,
+        "account": public_account,
+        "warning": None if photo_url else "Фото не найдено — добавь вручную.",
+    }
 
 @app.get("/api/jobs/{job_id}")
 def api_get_job(job_id: str):
