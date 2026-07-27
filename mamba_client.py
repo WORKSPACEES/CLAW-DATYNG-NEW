@@ -506,17 +506,7 @@ def get_matches(cookies: dict) -> dict:
     return _request("GET", path, cookies)
 
 
-def check_session(cookies: dict) -> dict:
-    uid = extract_user_id(cookies)
 
-    if not uid:
-        return {
-            "_status": 401,
-            "_account_status": "logged_out",
-            "_reason": "В cookies отсутствует ID анкеты",
-        }
-
-    path = f"{API_BASE}/users/{uid}"
     result = _request("GET", path, cookies)
     
     # Дополнительно проверяем через лайк-эндпоинт — он возвращает 403+user_banned при блоке
