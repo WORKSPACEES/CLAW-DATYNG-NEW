@@ -390,6 +390,9 @@ def task_auto_reply_http(
     """Авто-ответ для Twinby."""
 
     status_check = detect_account_status(token)
+    if status_check["status"] == "blocked":
+        return {"replied": 0, "skipped": 0, "errors": 0, "contacts_sent": 0,
+                "blocked": True, "logged_out": False}
     if status_check["status"] == "logged_out":
         return {"replied": 0, "skipped": 0, "errors": 0, "contacts_sent": 0,
                 "blocked": False, "logged_out": True}
