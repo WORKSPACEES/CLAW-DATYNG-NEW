@@ -972,7 +972,7 @@ const likesInput = node.querySelector(".sqLikesInput") || { disabled: false, val
 const splitBtn   = node.querySelector(".sqSplitBtn");
 const splitInput = node.querySelector(".sqSplitInput");
 
-const blockInfo = `${account.block_reason || ""} ${account.run_note || ""}`.toLowerCase();
+const blockInfo = `${account.block_reason || ""} ${account.run_note || ""} ${account.session_reason || ""}`.toLowerCase();
 
 const isBlocked =
   account.is_blocked === true ||
