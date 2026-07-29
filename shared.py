@@ -19,8 +19,8 @@ from supabase.client import ClientOptions
 
 # ── Supabase ──────────────────────────────────────────────
 
-SUPABASE_URL = "https://tbgaahpybvmfmzddrrdv.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZ2FhaHB5YnZtZm16ZGRycmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MDkzMDksImV4cCI6MjA5NzE4NTMwOX0.mnF7po7rusq3XrDIdfTuzuK8vXVkpMkJRWWT7QVVf2c"
+SUPABASE_URL = "https://uaknvfiuommbicpvwcql.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVha252Zml1b21tYmljcHZ3Y3FsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTI5Mzk1MCwiZXhwIjoyMTAwODY5OTUwfQ.o_kjU1Z3Q__qoWg2jQ4U0eG3HDWX0dsmXvg-r7O4oE4"
 
 _supabase_http_client = httpx.Client(http2=False, timeout=30.0)
 supabase: Client = create_client(
@@ -29,8 +29,8 @@ supabase: Client = create_client(
     options=ClientOptions(httpx_client=_supabase_http_client),
 )
 
-LEADS_SUPABASE_URL = "https://uspjqgjxtyllcincpumv.supabase.co"
-LEADS_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVzcGpxZ2p4dHlsbGNpbmNwdW12Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NTQ3OTIsImV4cCI6MjA5NjIzMDc5Mn0.hsiEyMr1uLRDCqRxZaout8W_tzi-T3vlRypD6P9LmLM"
+LEADS_SUPABASE_URL = "https://uaknvfiuommbicpvwcql.supabase.co"
+LEADS_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVha252Zml1b21tYmljcHZ3Y3FsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTI5Mzk1MCwiZXhwIjoyMTAwODY5OTUwfQ.o_kjU1Z3Q__qoWg2jQ4U0eG3HDWX0dsmXvg-r7O4oE4"
 
 _leads_http_client = httpx.Client(http2=False, timeout=30.0)
 leads_supabase: Client = create_client(
