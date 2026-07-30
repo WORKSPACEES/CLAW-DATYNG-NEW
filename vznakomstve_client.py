@@ -433,7 +433,7 @@ def task_auto_reply_http(
         return {"replied": 0, "skipped": 0, "errors": 0, "contacts_sent": 0}
 
     chats = task_get_all_chats_with_history(cookies, max_chats=max_chats, my_global_id=my_global_id)
-    chats = [c for c in chats if c.get("last_role") == "user"]
+    chats = [c for c in chats if c.get("last_role") == "user" or not c.get("history")]
     _log(f"Чатов для обработки: {len(chats)}")
 
     replied_user_ids = set()
@@ -446,20 +446,30 @@ def task_auto_reply_http(
         history = chat["history"]
         name = chat["name"]
 
-        if not history or history[-1]["role"] != "user":
+        if history and history[-1]["role"] != "user":
             skipped += 1
             continue
 
-        _log(f"{name}: генерирую ответ...")
-        for i, msg in enumerate(history[-20:]):
-            print(f"[VZN HISTORY] {name} [{i}] [{msg['role']}]: {msg['content'][:60]}", flush=True)
+        is_new_contact = not history
+
+        if is_new_contact:
+            _log(f"{name}: новый контакт, пишу первой...")
+            groq_messages = [{
+                "role": "user",
+                "content": "Напиши первое сообщение согласно инструкции — выбери рандомный вариант из предложенных в промте.",
+            }]
+        else:
+            _log(f"{name}: генерирую ответ...")
+            for i, msg in enumerate(history[-20:]):
+                print(f"[VZN HISTORY] {name} [{i}] [{msg['role']}]: {msg['content'][:60]}", flush=True)
+            groq_messages = history[-20:]
 
         try:
             reply = call_groq_fn(
                 account_id=account_id,
                 settings=settings,
                 system_prompt=system_prompt,
-                messages=history[-20:],
+                messages=groq_messages,
             )
         except Exception as e:
             _log(f"{name}: Groq ошибка: {e}")
