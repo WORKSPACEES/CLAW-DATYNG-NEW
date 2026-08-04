@@ -272,6 +272,27 @@ def call_gemini_with_rotation(account_id: str, settings: dict, system_prompt: st
             raise
     raise RuntimeError("Все Gemini ключи исчерпаны")
 
+def call_openrouter(api_key: str, system_prompt: str, messages: list[dict]) -> str:
+    if not api_key:
+        raise RuntimeError("OpenRouter API key not set")
+    payload = json.dumps({
+        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "messages": [{"role": "system", "content": system_prompt}] + messages,
+    })
+    conn = http.client.HTTPSConnection("openrouter.ai", timeout=30)
+    try:
+        conn.request("POST", "/api/v1/chat/completions", body=payload, headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        })
+        resp = conn.getresponse()
+        data = json.loads(resp.read().decode())
+        if "error" in data:
+            raise RuntimeError(f"OpenRouter error: {data['error']}")
+        return data["choices"][0]["message"]["content"].strip()
+    finally:
+        conn.close()
+
 def call_groq_with_rotation(account_id: str, settings: dict, system_prompt: str, messages: list[dict]) -> str:
     _reset_groq_keys_if_new_day()
     keys = get_groq_keys(settings)
@@ -304,9 +325,9 @@ def call_groq_with_rotation(account_id: str, settings: dict, system_prompt: str,
                 _groq_key_index[account_id] = (idx + 1) % len(keys)
                 continue
             raise
-    gemini_keys = get_gemini_keys(settings)
-    if gemini_keys:
-        return call_gemini_with_rotation(account_id, settings, system_prompt, messages)
+    openrouter_key = (settings.get("gemini_api_keys") or "").strip().splitlines()[0].strip() if settings.get("gemini_api_keys") else ""
+    if openrouter_key:
+        return call_openrouter(openrouter_key, system_prompt, messages)
     raise RuntimeError(f"Все {len(keys)} Groq API ключей исчерпаны")
 
 # ── System prompt ─────────────────────────────────────────
