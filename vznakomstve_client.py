@@ -454,10 +454,41 @@ def task_auto_reply_http(
 
         if is_new_contact:
             _log(f"{name}: новый контакт, пишу первой...")
-            groq_messages = [{
-                "role": "user",
-                "content": "Напиши первое сообщение согласно инструкции — выбери рандомный вариант из предложенных в промте.",
-            }]
+
+            _greetings = [
+                "приветик, как насчет познакомиться поближе и встретиться ?",
+                "салют, приколько выглядишь, составишь компания мне ? давай встретимся ? не хочу долго мусолить тут",
+                "куку, что рассматриваешь тут? было бы интересно встреться и провести время вместе ?",
+                "Привет, какие планы на вечер? давай встретимся ?",
+                "Вау, это что за тинг тут, встретиться не хочешь ?",
+                "привет, за встречи тут или просто общаться?",
+                "привет, встречи на мат основе интересуют ?",
+            ]
+            _tg_openers = [
+                "го в телегу?",
+                "может в тг?",
+                "погнали в телегу?",
+                "мне тут не оч удобно, го в тг?",
+            ]
+
+            first_msg = random.choice(_greetings)
+            send_message(cookies, user_id, first_msg)
+            _log(f"{name}: ✓ приветствие отправлено: {first_msg[:50]}")
+            time.sleep(random.uniform(2, 4))
+
+            send_message(cookies, user_id, random.choice(_tg_openers))
+            time.sleep(random.uniform(2, 4))
+
+            if contacts:
+                send_result_c = send_message(cookies, user_id, contacts)
+                if send_result_c.get("_status") == 200:
+                    contacts_sent += 1
+                    _log(f"{name}: ✓ контакт отправлен")
+
+            replied += 1
+            replied_user_ids.add(user_id)
+            time.sleep(2)
+            continue
         else:
             _log(f"{name}: генерирую ответ...")
             for i, msg in enumerate(history[-20:]):
