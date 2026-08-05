@@ -1263,39 +1263,69 @@ async def pw_run_chat_task(page, settings: dict, account_id: str) -> dict:
                 msg_count = len(msg_check)
 
                 if msg_count <= 1:
-                    first_msg = call_groq_with_rotation(
-                        account_id=account_id, settings=settings, system_prompt=system_prompt,
-                        messages=[{"role": "user", "content": "Напиши первое сообщение для начала знакомства. В стиле: 'приветик, как насчёт встретиться?' или 'привет, не хочешь встретиться и хорошо провести время?'. Без контактов, без тг, без суммы мп — только приглашение к встрече в лёгкой игривой форме."}]
-                    )
-
-                    contacts = settings.get("contacts", "")
-                    if contacts and contacts.lower() in (first_msg or "").lower():
-                        first_msg = "привет"
+                    _greetings = [
+                        "приветик, как насчет познакомиться поближе и встретиться ?",
+                        "салют, приколько выглядишь, составишь компания мне ? давай встретимся ? не хочу долго мусолить тут",
+                        "куку, что рассматриваешь тут? было бы интересно встреться и провести время вместе ?",
+                        "Привет, какие планы на вечер? давай встретимся ?",
+                        "Вау, это что за тинг тут, встретиться не хочешь ?",
+                        "привет, за встречи тут или просто общаться?",
+                        "привет, встречи на мат основе интересуют ?",
+                    ]
+                    first_msg = random.choice(_greetings)
 
                     if first_msg:
                         input_el = await page.wait_for_selector(
                             "textarea#message-input, textarea[name='input-textarea']", timeout=5000
                         )
                         box = await input_el.bounding_box()
-                        if box:
-                            await page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2, steps=20)
-                            await asyncio.sleep(0.3)
+                    if box:
+                        await page.mouse.move(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2, steps=20)
+                        await asyncio.sleep(0.3)
+                    await input_el.click()
+                    await asyncio.sleep(0.5)
+                    await input_el.fill("")
+                    await input_el.type(first_msg, delay=50)
+                    await asyncio.sleep(0.5)
+                    send_btn = await page.wait_for_selector(
+                        "button[data-name='messenger-send-message-icon']", timeout=3000
+                    )
+                    send_box = await send_btn.bounding_box()
+                    if send_box:
+                        await page.mouse.move(send_box['x'] + send_box['width'] / 2, send_box['y'] + send_box['height'] / 2, steps=15)
+                        await asyncio.sleep(0.3)
+                    await send_btn.click()
+                    await asyncio.sleep(random.uniform(2, 4))
+
+                    # Сообщение 2 — предложение тг
+                    _tg_openers = [
+                        "го в телегу?",
+                        "может в тг?",
+                        "погнали в телегу?",
+                        "мне тут не оч удобно, го в тг?",
+                    ]
+                    tg_msg = random.choice(_tg_openers)
+                    await input_el.click()
+                    await asyncio.sleep(0.3)
+                    await input_el.fill("")
+                    await input_el.type(tg_msg, delay=50)
+                    await asyncio.sleep(0.3)
+                    await send_btn.click()
+                    await asyncio.sleep(random.uniform(2, 4))
+
+                    # Сообщение 3 — контакт
+                    contacts = settings.get("contacts", "")
+                    if contacts:
                         await input_el.click()
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.3)
                         await input_el.fill("")
-                        await input_el.type(first_msg, delay=50)
-                        await asyncio.sleep(0.5)
-                        send_btn = await page.wait_for_selector(
-                            "button[data-name='messenger-send-message-icon']", timeout=3000
-                        )
-                        send_box = await send_btn.bounding_box()
-                        if send_box:
-                            await page.mouse.move(send_box['x'] + send_box['width'] / 2, send_box['y'] + send_box['height'] / 2, steps=15)
-                            await asyncio.sleep(0.3)
+                        await input_el.type(contacts, delay=50)
+                        await asyncio.sleep(0.3)
                         await send_btn.click()
                         await asyncio.sleep(2)
-                        result["greeted"] += 1
-                        print(f"[CHAT] Написал первым: {first_msg[:60]}", flush=True)
+
+                    result["greeted"] += 1
+                    print(f"[CHAT] Написал первым: {first_msg[:60]}", flush=True)
                 else:
                     result["skipped"] += 1
 
