@@ -437,60 +437,64 @@ def task_auto_reply_http(
             msgs_resp = get_chat_messages(token, chat_id)
             msgs_raw = msgs_resp.get("results") or msgs_resp.get("data") or []
             if msgs_raw:
-                continue  # уже есть сообщения — пропускаем (на всякий случай, хотя тут и так должно быть пусто)
+                continue
 
             try:
-    _greetings = [
-        "приветик, как насчет познакомиться поближе и встретиться ?",
-        "салют, приколько выглядишь, составишь компания мне ? давай встретимся ? не хочу долго мусолить тут",
-        "куку, что рассматриваешь тут? было бы интересно встреться и провести время вместе ?",
-        "Привет, какие планы на вечер? давай встретимся ?",
-        "Вау, это что за тинг тут, встретиться не хочешь ?",
-        "привет, за встречи тут или просто общаться?",
-        "привет, встречи на мат основе интересуют ?",
-    ]
-    first_reply = random.choice(_greetings)
-    print(f"[TWINBY MATCH] Выбрано приветствие: {first_reply}", flush=True)
+                _greetings = [
+                    "приветик, как насчет познакомиться поближе и встретиться ?",
+                    "салют, приколько выглядишь, составишь компания мне ? давай встретимся ? не хочу долго мусолить тут",
+                    "куку, что рассматриваешь тут? было бы интересно встреться и провести время вместе ?",
+                    "Привет, какие планы на вечер? давай встретимся ?",
+                    "Вау, это что за тигр тут, встретиться не хочешь ?",
+                    "привет, за встречи тут или просто общаться?",
+                    "привет, встречи на мат основе интересуют ?",
+                ]
+                first_reply = random.choice(_greetings)
+                print(f"[TWINBY MATCH] Выбрано приветствие: {first_reply}", flush=True)
 
-    # ── Финальная проверка прямо перед отправкой ──
-    recheck_resp = get_chat_messages(token, chat_id)
-    recheck_raw = recheck_resp.get("results") or recheck_resp.get("data") or []
-    if recheck_raw:
-        print(f"[TWINBY MATCH] {name}: уже ответили (параллельный запуск), пропускаю", flush=True)
-        continue
+                # ── Финальная проверка прямо перед отправкой ──
+                recheck_resp = get_chat_messages(token, chat_id)
+                recheck_raw = recheck_resp.get("results") or recheck_resp.get("data") or []
+                if recheck_raw:
+                    print(f"[TWINBY MATCH] {name}: уже ответили (параллельный запуск), пропускаю", flush=True)
+                    continue
 
-    # Сообщение 1 — приветствие
-    send_result = send_message(token, chat_id, first_reply)
-    if send_result.get("_status") not in (200, 201):
-        print(f"[TWINBY MATCH] ✗ {name}: {send_result}", flush=True)
-    else:
-        print(f"[TWINBY MATCH] ✓ написал первым {name}: {first_reply[:50]}", flush=True)
-        time.sleep(random.uniform(2, 4))
+                # Сообщение 1 — приветствие
+                send_result = send_message(token, chat_id, first_reply)
+                if send_result.get("_status") not in (200, 201):
+                    print(f"[TWINBY MATCH] ✗ {name}: {send_result}", flush=True)
+                else:
+                    print(f"[TWINBY MATCH] ✓ написал первым {name}: {first_reply[:50]}", flush=True)
+                    time.sleep(random.uniform(2, 4))
 
-        # Сообщение 2 — предложение тг
-        _tg_openers = [
-            "го в телегу?",
-            "может в тг?",
-            "погнали в телегу?",
-            "мне тут не оч удобно, го в тг?",
-        ]
-        send_message(token, chat_id, random.choice(_tg_openers))
-        time.sleep(random.uniform(2, 4))
+                    # Сообщение 2 — предложение тг
+                    _tg_openers = [
+                        "го в телегу?",
+                        "может в тг?",
+                        "погнали в телегу?",
+                        "мне тут не оч удобно, го в тг?",
+                    ]
+                    send_message(token, chat_id, random.choice(_tg_openers))
+                    time.sleep(random.uniform(2, 4))
 
-        # Сообщение 3 — контакт
-        if contacts:
-            send_result3 = send_message(token, chat_id, contacts)
-            if send_result3.get("_status") in (200, 201):
-                contacts_sent += 1
-                print(f"[TWINBY MATCH] ✓ контакт отправлен {name}", flush=True)
-        greeted += 1
+                    # Сообщение 3 — контакт
+                    if contacts:
+                        send_result3 = send_message(token, chat_id, contacts)
+                        if send_result3.get("_status") in (200, 201):
+                            contacts_sent += 1
+                            print(f"[TWINBY MATCH] ✓ контакт отправлен {name}", flush=True)
+                    greeted += 1
 
-except Exception as e:
-    print(f"[TWINBY MATCH] ✗ {name}: {e}", flush=True)
+            except Exception as e:
+                print(f"[TWINBY MATCH] ✗ {name}: {e}", flush=True)
+
+            time.sleep(random.uniform(1, 3))
+
+    except Exception as e:
+        print(f"[TWINBY MATCH] ошибка: {e}", flush=True)
 
     # ── Отвечаем на входящие сообщения ────────────────────
     chats = task_get_all_chats_with_history(token, max_chats=max_chats)
-    # Берём только чаты где последнее сообщение от собеседника
     chats = [c for c in chats if c.get("last_role") == "user"]
 
     for chat in chats:
@@ -502,13 +506,9 @@ except Exception as e:
         history = chat["history"]
         name = chat["name"]
 
-        # Последнее сообщение должно быть от собеседника
         if not history or history[-1]["role"] != "user":
             skipped += 1
             continue
-
-        # Не пропускаем чат даже если контакт уже отправлен — продолжаем общение
-        pass
 
         print(f"[TWINBY AUTO-REPLY] {name} (chat {chat_id}): генерирую...", flush=True)
 
@@ -544,17 +544,14 @@ except Exception as e:
                 continue
 
         try:
-            # Если в ответе есть контакт — разбиваем на два сообщения
             if contacts and contacts.lower() in reply.lower():
-                # Убираем контакт из первого сообщения
                 reply_without_contact = reply.replace(contacts, "").strip()
                 reply_without_contact = reply_without_contact.strip("—-,. ")
-                
+
                 if reply_without_contact:
                     send_message(token, chat_id, reply_without_contact)
                     time.sleep(random.uniform(2, 4))
-                
-                # Второе сообщение — только контакт
+
                 send_result = send_message(token, chat_id, contacts)
                 status = send_result.get("_status")
                 if status in (200, 201):
