@@ -78,7 +78,7 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
         proxy_url = f"socks5h://{_px['username']}:{_px['password']}@{_px['host']}:{_px['port']}"
     try:
         import httpx
-        async with httpx.AsyncClient(proxy=proxy_url, timeout=15) as client:
+        async with httpx.AsyncClient(proxy=proxy_url, timeout=45) as client:
             resp = await client.post("https://twinby.ru/api/auth/v2/auth/init", content=body, headers=headers)
         if resp.status_code not in (200, 202):
             raise HTTPException(status_code=400, detail=f"Twinby вернул {resp.status_code}")
@@ -113,7 +113,7 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
         "code": code,
     }, ensure_ascii=False).encode()
     
-    async with httpx.AsyncClient(proxy=proxy_url, timeout=15) as client:
+    async with httpx.AsyncClient(proxy=proxy_url, timeout=45) as client:
         resp = await client.post(
             "https://twinby.ru/api/auth/v2/auth/confirm",
             content=body,
