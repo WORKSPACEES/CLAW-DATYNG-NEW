@@ -10,6 +10,7 @@ import gzip
 import time
 import uuid
 from typing import Optional
+from pathlib import Path
 
 
 BASE_HOST = "twinby.ru"
@@ -449,7 +450,16 @@ def task_auto_reply_http(
                     "привет, за встречи тут или просто общаться?",
                     "привет, встречи на мат основе интересуют ?",
                 ]
-                first_reply = random.choice(_greetings)
+                # ── По кругу, не рандом ──
+                _acc_id = settings.get("_account_id", "default")
+                _idx_path = Path(__file__).resolve().parent / "data" / f"greeting_index_twinby_{_acc_id}.json"
+                try:
+                    _idx = json.loads(_idx_path.read_text(encoding="utf-8")).get("idx", 0)
+                except Exception:
+                    _idx = 0
+                first_reply = _greetings[_idx % len(_greetings)]
+                _idx_path.write_text(json.dumps({"idx": (_idx + 1) % len(_greetings)}, ensure_ascii=False), encoding="utf-8")
+                print(f"[TWINBY MATCH] Приветствие #{_idx}: {first_reply}", flush=True)
                 print(f"[TWINBY MATCH] Выбрано приветствие: {first_reply}", flush=True)
 
                 # ── Финальная проверка прямо перед отправкой ──
@@ -465,24 +475,6 @@ def task_auto_reply_http(
                     print(f"[TWINBY MATCH] ✗ {name}: {send_result}", flush=True)
                 else:
                     print(f"[TWINBY MATCH] ✓ написал первым {name}: {first_reply[:50]}", flush=True)
-                    time.sleep(random.uniform(2, 4))
-
-                    # Сообщение 2 — предложение тг
-                    _tg_openers = [
-                        "го в телегу?",
-                        "может в тг?",
-                        "погнали в телегу?",
-                        "мне тут не оч удобно, го в тг?",
-                    ]
-                    send_message(token, chat_id, random.choice(_tg_openers))
-                    time.sleep(random.uniform(2, 4))
-
-                    # Сообщение 3 — контакт
-                    if contacts:
-                        send_result3 = send_message(token, chat_id, contacts)
-                        if send_result3.get("_status") in (200, 201):
-                            contacts_sent += 1
-                            print(f"[TWINBY MATCH] ✓ контакт отправлен {name}", flush=True)
                     greeted += 1
 
             except Exception as e:
@@ -544,6 +536,9 @@ def task_auto_reply_http(
                 continue
 
         try:
+            # Считаем сколько сообщений от нас уже было
+            our_msgs_count = sum(1 for m in history if m["role"] == "assistant")
+
             if contacts and contacts.lower() in reply.lower():
                 reply_without_contact = reply.replace(contacts, "").strip()
                 reply_without_contact = reply_without_contact.strip("—-,. ")
@@ -560,6 +555,23 @@ def task_auto_reply_http(
                     print(f"[TWINBY AUTO-REPLY] {name}: ✓ контакт отправлен отдельно", flush=True)
                 else:
                     errors += 1
+
+            elif contacts and our_msgs_count == 1:
+                # Первый ответ юзера — пишем ответ Groq + скидываем TG
+                send_result = send_message(token, chat_id, reply)
+                status = send_result.get("_status")
+                if status in (200, 201):
+                    replied += 1
+                    print(f"[TWINBY AUTO-REPLY] {name}: ✓ ответ отправлен", flush=True)
+                    time.sleep(random.uniform(2, 4))
+                    send_result2 = send_message(token, chat_id, contacts)
+                    if send_result2.get("_status") in (200, 201):
+                        contacts_sent += 1
+                        print(f"[TWINBY AUTO-REPLY] {name}: ✓ TG скинут после первого ответа", flush=True)
+                else:
+                    errors += 1
+                    print(f"[TWINBY AUTO-REPLY] {name}: ✗ {send_result}", flush=True)
+
             else:
                 send_result = send_message(token, chat_id, reply)
                 status = send_result.get("_status")
