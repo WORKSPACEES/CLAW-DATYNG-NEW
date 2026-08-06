@@ -568,9 +568,9 @@ def task_auto_reply_http(
                     if send_result2.get("_status") in (200, 201):
                         contacts_sent += 1
                         print(f"[TWINBY AUTO-REPLY] {name}: ✓ TG скинут после первого ответа", flush=True)
-                else:
-                    errors += 1
-                    print(f"[TWINBY AUTO-REPLY] {name}: ✗ {send_result}", flush=True)
+            else:
+                errors += 1
+                print(f"[TWINBY AUTO-REPLY] {name}: ✗ {send_result}", flush=True)
 
             else:
                 send_result = send_message(token, chat_id, reply)
