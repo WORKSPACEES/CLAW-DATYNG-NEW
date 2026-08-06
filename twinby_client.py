@@ -295,7 +295,7 @@ def task_likes_http(token: str, limit: int = 20) -> dict:
             print(f"[TWINBY LIKES] ✗ {name}: {e}", flush=True)
             errors += 1
 
-        time.sleep(random.uniform(3, 8))
+        time.sleep(random.uniform(1, 3))
 
     return {"liked": liked, "skipped": skipped, "errors": errors}
 
@@ -480,7 +480,7 @@ def task_auto_reply_http(
             except Exception as e:
                 print(f"[TWINBY MATCH] ✗ {name}: {e}", flush=True)
 
-            time.sleep(random.uniform(3, 8))
+            time.sleep(random.uniform(1, 3))
 
     except Exception as e:
         print(f"[TWINBY MATCH] ошибка: {e}", flush=True)
@@ -566,7 +566,7 @@ def task_auto_reply_http(
             print(f"[TWINBY AUTO-REPLY] {name}: ✗ {e}", flush=True)
             continue
 
-        time.sleep(random.uniform(3, 8))
+        time.sleep(random.uniform(1, 3))
 
     return {
         "replied": replied,
