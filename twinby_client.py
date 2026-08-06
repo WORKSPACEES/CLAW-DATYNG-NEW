@@ -87,7 +87,7 @@ def _api_request(method: str, path: str, token: str, body: dict = None) -> dict:
         "Accept-Language": "ru-RU,ru;q=0.9",
         "Content-Type": "application/json",
         "Authorization": f"JWT {token}",
-        "User-Agent": _proxy().get("user_agent") or "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/147.0.0.0 Safari/537.36",
+        "User-Agent": _proxy().get("user_agent") or "Dart/3.11 (dart:io)",
         "Origin": "https://twinby.ru",
         "Referer": "https://twinby.ru/",
     }
@@ -295,7 +295,7 @@ def task_likes_http(token: str, limit: int = 20) -> dict:
             print(f"[TWINBY LIKES] ✗ {name}: {e}", flush=True)
             errors += 1
 
-        time.sleep(random.uniform(1, 3))
+        time.sleep(random.uniform(3, 8))
 
     return {"liked": liked, "skipped": skipped, "errors": errors}
 
@@ -410,7 +410,7 @@ def task_auto_reply_http(
 
     # ── Пишем первым новым матчам ──────────────────────────
     try:
-        matches_resp = get_empty_chats(token, page=1, size=20)
+        matches_resp = get_empty_chats(token, page=1, size=5)
         print(f"[TWINBY MATCH] raw={str(matches_resp)[:500]}", flush=True)
         matches = matches_resp.get("results") or matches_resp.get("data") or []
         print(f"[TWINBY MATCH] Пустых чатов (новых матчей): {len(matches)}", flush=True)
@@ -480,7 +480,7 @@ def task_auto_reply_http(
             except Exception as e:
                 print(f"[TWINBY MATCH] ✗ {name}: {e}", flush=True)
 
-            time.sleep(random.uniform(1, 3))
+            time.sleep(random.uniform(3, 8))
 
     except Exception as e:
         print(f"[TWINBY MATCH] ошибка: {e}", flush=True)
@@ -566,7 +566,7 @@ def task_auto_reply_http(
             print(f"[TWINBY AUTO-REPLY] {name}: ✗ {e}", flush=True)
             continue
 
-        time.sleep(random.uniform(1, 3))
+        time.sleep(random.uniform(3, 8))
 
     return {
         "replied": replied,
