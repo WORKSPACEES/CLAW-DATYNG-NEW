@@ -536,9 +536,6 @@ def task_auto_reply_http(
                 continue
 
         try:
-            # Считаем сколько сообщений от нас уже было
-            our_msgs_count = sum(1 for m in history if m["role"] == "assistant")
-
             if contacts and contacts.lower() in reply.lower():
                 reply_without_contact = reply.replace(contacts, "").strip()
                 reply_without_contact = reply_without_contact.strip("—-,. ")
@@ -555,23 +552,6 @@ def task_auto_reply_http(
                     print(f"[TWINBY AUTO-REPLY] {name}: ✓ контакт отправлен отдельно", flush=True)
                 else:
                     errors += 1
-
-            elif contacts and our_msgs_count == 1:
-                # Первый ответ юзера — пишем ответ Groq + скидываем TG
-                send_result = send_message(token, chat_id, reply)
-                status = send_result.get("_status")
-                if status in (200, 201):
-                    replied += 1
-                    print(f"[TWINBY AUTO-REPLY] {name}: ✓ ответ отправлен", flush=True)
-                    time.sleep(random.uniform(2, 4))
-                    send_result2 = send_message(token, chat_id, contacts)
-                    if send_result2.get("_status") in (200, 201):
-                        contacts_sent += 1
-                        print(f"[TWINBY AUTO-REPLY] {name}: ✓ TG скинут после первого ответа", flush=True)
-            else:
-                errors += 1
-                print(f"[TWINBY AUTO-REPLY] {name}: ✗ {send_result}", flush=True)
-
             else:
                 send_result = send_message(token, chat_id, reply)
                 status = send_result.get("_status")
