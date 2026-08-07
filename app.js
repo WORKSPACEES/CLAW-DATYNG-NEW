@@ -1951,21 +1951,16 @@ function openGroqModal(accountId) {
   groqModal.classList.add("open");
 }
 
-async function setAccountRunStatus(accountId, status, task = "", note = "") {
+async function setAccountRunStatus(accountId, status, task = "", note = "", isBlocked = false) {
   try {
+    const body = { run_status: status, run_task: task, run_note: note };
+    if (isBlocked) body.is_blocked = true;
     const res = await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(accountId)}/run-status`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        run_status: status,
-        run_task: task,
-        run_note: note,
-      }),
+      body: JSON.stringify(body),
     });
-
-    if (!res.ok) {
-      console.warn("run-status не сохранился:", await res.text());
-    }
+    if (!res.ok) console.warn("run-status не сохранился:", await res.text());
   } catch (err) {
     console.warn("setAccountRunStatus error:", err);
   }
@@ -2312,7 +2307,7 @@ async function switchSplitToReserve(oldAccountId, blockResult, limit, resultEl, 
   }
 
   try {
-    await setAccountRunStatus(oldAccountId, "idle", "", "Анкета заблокирована");
+    await setAccountRunStatus(oldAccountId, "idle", "", "Анкета заблокирована", true);
   } catch (err) {
     console.warn("old blocked status error:", err);
   }
@@ -2385,7 +2380,7 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
 
       const likesResult = await runOneLikesStep(accountId, limit, resultEl, round);
 
-      if (likesResult.blocked) {
+      if (likesResult.blocked || likesResult.logged_out) {
         await switchSplitToReserve(accountId, likesResult, limit, resultEl, cardEl, fastPollId, livePollId);
         return;
       }
@@ -2403,7 +2398,7 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
 
       const chatsResult1 = await runOneChatsStep(accountId, resultEl, round, "1/2");
 
-      if (chatsResult1.blocked) {
+      if (chatsResult1.blocked || chatsResult1.logged_out) {
         await switchSplitToReserve(accountId, chatsResult1, limit, resultEl, cardEl, fastPollId, livePollId);
         return;
       }
@@ -2421,7 +2416,7 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
 
       const chatsResult2 = await runOneChatsStep(accountId, resultEl, round, "2/2");
 
-      if (chatsResult2.blocked) {
+      if (chatsResult2.blocked || chatsResult2.logged_out) {
         await switchSplitToReserve(accountId, chatsResult2, limit, resultEl, cardEl, fastPollId, livePollId);
         return;
       }
