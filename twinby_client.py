@@ -82,12 +82,13 @@ def extract_jwt(cookies_or_token: dict | str) -> str:
 
 def _api_request(method: str, path: str, token: str, body: dict = None) -> dict:
     """Запрос к twinby.ru API."""
+    p = _proxy()
     headers = {
         "Accept": "application/json",
         "Accept-Language": "ru-RU,ru;q=0.9",
         "Content-Type": "application/json",
         "Authorization": f"JWT {token}",
-        "User-Agent": _proxy().get("user_agent") or "Dart/3.11 (dart:io)",
+        "User-Agent": p.get("user_agent") or "Dart/3.11 (dart:io)",
         "Origin": "https://twinby.ru",
         "Referer": "https://twinby.ru/",
     }
@@ -98,7 +99,6 @@ def _api_request(method: str, path: str, token: str, body: dict = None) -> dict:
 
     try:
         import base64
-        p = _proxy()
         if p.get("use_proxy") and p.get("host"):
             auth = base64.b64encode(f"{p['username']}:{p['password']}".encode()).decode()
             conn = http.client.HTTPSConnection(p["host"], p["port"], timeout=15)
