@@ -189,6 +189,8 @@ class ConnectAccountRequest(BaseModel):
     twinby_code: str = ""
     vzn_email: str = ""
     vzn_code: str = ""
+    intcity_email: str = ""
+    intcity_password: str = ""
 
 class SetChainRequest(BaseModel):
     account_id: str
@@ -558,6 +560,36 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         supabase.table("accounts").insert(public_account).execute()
         supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": payload.cookies_raw}).execute()
         return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    if platform_lower == "intcity":
+        if not payload.intcity_email or not payload.intcity_password:
+            raise HTTPException(status_code=400, detail="Введи email и пароль приложения")
+        import imaplib
+        try:
+            mail = imaplib.IMAP4_SSL("imap.mail.ru", 993)
+            mail.login(payload.intcity_email, payload.intcity_password)
+            mail.logout()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Не удалось подключиться к почте: {e}")
+        account_id = str(uuid.uuid4())
+        session = get_session(authorization)
+        public_account = {
+            "id": account_id,
+            "owner_email": session["email"],
+            "platform": "intCity",
+            "name": payload.account_name or payload.intcity_email,
+            "profile_url": f"mailto:{payload.intcity_email}",
+            "final_url": f"mailto:{payload.intcity_email}",
+            "photo_url": None,
+            "session_valid": True,
+            "session_reason": "IMAP подключение успешно",
+            "images_found": 0,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        cookies_raw = json.dumps({"email": payload.intcity_email, "password": payload.intcity_password})
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": cookies_raw}).execute()
+        return {"ok": True, "account": public_account, "warning": None}
 
     raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
 
@@ -1117,6 +1149,141 @@ def api_get_groq_error():
 @app.post("/api/groq-error/dismiss")
 def api_dismiss_groq_error():
     return {"ok": True}
+
+# ── intCity: парсер и рассылка ────────────────────────────
+
+import re as _re
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+
+class IntCityParseRequest(BaseModel):
+    account_id: str
+    pages: int = 3
+
+class IntCitySendRequest(BaseModel):
+    account_id: str
+    subject: str
+    body: str
+    limit: int = 50
+
+@app.post("/api/intcity/parse")
+async def intcity_parse(payload: IntCityParseRequest, authorization: str | None = Header(default=None)):
+    session = get_session(authorization)
+    priv = supabase.table("accounts_private").select("cookies_raw").eq("id", payload.account_id).execute()
+    if not priv.data:
+        raise HTTPException(status_code=404, detail="Аккаунт не найден")
+    owner_email = session["email"]
+
+    BASE_URL = "https://a.intimcity.co"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "ru-RU,ru;q=0.9",
+    }
+
+    found_emails = []
+    errors = []
+    ad_urls = []
+
+    async with httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True) as client:
+        for page in range(1, payload.pages + 1):
+            try:
+                url = f"{BASE_URL}/bullboard?gender_from=m&gender_to=f&place=&page={page}"
+                resp = await client.get(url)
+                links = _re.findall(r'href="(/bullboard/\d+)"', resp.text)
+                for link in links:
+                    full = BASE_URL + link
+                    if full not in ad_urls:
+                        ad_urls.append(full)
+            except Exception as e:
+                errors.append(f"Страница {page}: {e}")
+
+        for ad_url in ad_urls:
+            try:
+                resp = await client.get(ad_url)
+                emails = _re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', resp.text)
+                emails = [e for e in emails if not any(x in e for x in ["intimcity", "example", "test"])]
+                for email in set(emails):
+                    found_emails.append({"email": email, "ad_url": ad_url})
+            except Exception as e:
+                errors.append(f"{ad_url}: {e}")
+
+    saved = 0
+    for item in found_emails:
+        try:
+            supabase.table("intcity_leads").upsert({
+                "email": item["email"],
+                "ad_url": item["ad_url"],
+                "owner_email": owner_email,
+            }, on_conflict="email").execute()
+            saved += 1
+        except Exception:
+            pass
+
+    return {
+        "ok": True,
+        "found": len(found_emails),
+        "saved": saved,
+        "ads_parsed": len(ad_urls),
+        "errors": errors[:10],
+        "summary": f"Найдено {len(found_emails)} email, сохранено {saved}, объявлений: {len(ad_urls)}"
+    }
+
+
+@app.get("/api/intcity/leads")
+async def intcity_leads(account_id: str, authorization: str | None = Header(default=None)):
+    session = get_session(authorization)
+    res = supabase.table("intcity_leads").select("*").eq("owner_email", session["email"]).order("created_at", desc=True).limit(500).execute()
+    return {"ok": True, "leads": res.data or []}
+
+
+@app.post("/api/intcity/send")
+async def intcity_send(payload: IntCitySendRequest, authorization: str | None = Header(default=None)):
+    session = get_session(authorization)
+    priv = supabase.table("accounts_private").select("cookies_raw").eq("id", payload.account_id).execute()
+    if not priv.data:
+        raise HTTPException(status_code=404, detail="Аккаунт не найден")
+    creds = json.loads(priv.data[0]["cookies_raw"])
+    sender_email = creds["email"]
+    sender_password = creds["password"]
+
+    res = supabase.table("intcity_leads").select("*").eq("owner_email", session["email"]).is_("sent_at", "null").limit(payload.limit).execute()
+    leads = res.data or []
+
+    if not leads:
+        return {"ok": True, "sent": 0, "summary": "Нет новых лидов для рассылки"}
+
+    sent = 0
+    errors = []
+
+    try:
+        smtp = smtplib.SMTP_SSL("smtp.mail.ru", 465)
+        smtp.login(sender_email, sender_password)
+        for lead in leads:
+            try:
+                msg = MIMEMultipart()
+                msg["From"] = sender_email
+                msg["To"] = lead["email"]
+                msg["Subject"] = payload.subject
+                msg.attach(MIMEText(payload.body, "plain", "utf-8"))
+                smtp.sendmail(sender_email, lead["email"], msg.as_string())
+                supabase.table("intcity_leads").update({
+                    "sent_at": datetime.now().isoformat()
+                }).eq("id", lead["id"]).execute()
+                sent += 1
+            except Exception as e:
+                errors.append(f"{lead['email']}: {e}")
+        smtp.quit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка SMTP: {e}")
+
+    return {
+        "ok": True,
+        "sent": sent,
+        "errors": errors[:10],
+        "summary": f"Отправлено {sent} из {len(leads)}"
+    }
+
 
 # ── Health ────────────────────────────────────────────────
 
