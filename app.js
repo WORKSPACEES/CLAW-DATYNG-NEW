@@ -1758,7 +1758,7 @@ form.addEventListener("submit", async (event) => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": localStorage.getItem("authToken") || "",
+          "Authorization": localStorage.getItem("claw_auth_token") || "",
         },
         body: JSON.stringify({
           account_name: j.name,
