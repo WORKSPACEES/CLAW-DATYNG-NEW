@@ -386,7 +386,7 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
 
     # Отправляем
     print(f"[INTCITY] Запускаем send_emails: sender={sender_email!r}, leads={len(leads)}", flush=True)
-    result = send_emails(sender_email, sender_password, leads, subject, body, mail_cookie, mail_token)
+    result = send_emails(sender_email, "", leads, subject, body, mail_cookie, mail_token)
     print(f"[INTCITY] send_emails результат: {result}", flush=True)
 
     return {
