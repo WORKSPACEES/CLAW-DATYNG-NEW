@@ -1705,8 +1705,9 @@ form.addEventListener("submit", async (event) => {
   const slotEls = [...connectSlots.querySelectorAll(".connectSlot")];
 
   const jobs = slotEls.map(slotEl => {
-    const isTwinby = activePlatform === "Twinby";
-    const isVzn    = activePlatform === "Vznakomstve";
+    const isTwinby  = activePlatform === "Twinby";
+    const isVzn     = activePlatform === "Vznakomstve";
+    const isIntCity = activePlatform === "intCity";
     return {
       slotEl,
       name:        slotEl.querySelector(".slotAccountName").value.trim(),
