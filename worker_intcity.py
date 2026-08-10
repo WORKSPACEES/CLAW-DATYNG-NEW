@@ -160,7 +160,7 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
                             found.append({"email": email, "ad_url": url})
                             page_emails += 1
 
-                 print(f"[INTCITY] Страница {page}: {page_emails} валидных email из {len(bb_contacts)} контактов", flush=True)
+                print(f"[INTCITY] Страница {page}: {page_emails} валидных email из {len(bb_contacts)} контактов", flush=True)
 
             except Exception as e:
                 print(f"[INTCITY] Ошибка страницы {page}: {e}", flush=True)
