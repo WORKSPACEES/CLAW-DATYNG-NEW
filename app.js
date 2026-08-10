@@ -1247,6 +1247,17 @@ if (isIntCityCard && intCityFields) {
     localStorage.setItem(`intcity_pages_${account.id}`, pagesEl.value);
   });
 
+  const cookieEl = intCityFields.querySelector(".sqIntCityCookie");
+  const tokenEl = intCityFields.querySelector(".sqIntCityToken");
+  if (cookieEl) {
+    cookieEl.value = localStorage.getItem(`intcity_cookie_${account.id}`) || "";
+    cookieEl.addEventListener("input", () => localStorage.setItem(`intcity_cookie_${account.id}`, cookieEl.value));
+  }
+  if (tokenEl) {
+    tokenEl.value = localStorage.getItem(`intcity_token_${account.id}`) || "";
+    tokenEl.addEventListener("input", () => localStorage.setItem(`intcity_token_${account.id}`, tokenEl.value));
+  }
+
   // Переопределяем сплит для intCity
   splitBtn.onclick = async () => {
     if (runningSplits.has(account.id)) {
@@ -1297,6 +1308,8 @@ if (isIntCityCard && intCityFields) {
           pages,
           subject,
           body,
+          mail_cookie: localStorage.getItem(`intcity_cookie_${account.id}`) || "",
+          mail_token: localStorage.getItem(`intcity_token_${account.id}`) || "",
         }),
       });
       const data = await res.json();
