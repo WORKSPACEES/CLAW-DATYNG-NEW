@@ -222,8 +222,6 @@ deleteTabConfirmBtn?.addEventListener("click", async () => {
     if (activeTabId === tab.id) {
       activeTabId = null;
       document.querySelector('.platformBtn[data-platform="Mamba"]')?.classList.add("active");
-      const connectPanel = document.getElementById("connectForm");
-      if (connectPanel) connectPanel.style.display = activePlatform === "intCity" ? "none" : "";
       activePlatform = "Mamba";
     }
     closeDeleteTabModal();
