@@ -1224,9 +1224,7 @@ if (isIntCityCard && intCityFields) {
 
   // Скрываем ненужные элементы
   const sqStats = node.querySelector(".sqStats");
-  const sqSplitControl = node.querySelector(".sqSplitControl");
   if (sqStats) sqStats.style.display = "none";
-  if (sqSplitControl) sqSplitControl.style.display = "none";
 
   // Восстанавливаем сохранённые значения
   const savedSubject = localStorage.getItem(`intcity_subject_${account.id}`) || "";
