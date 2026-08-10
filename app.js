@@ -994,6 +994,7 @@ const isLoggedOut =
   !isBlocked &&
   (account.platform || "").toLowerCase() !== "lovelaz" &&
   (account.platform || "").toLowerCase() !== "vznakomstve" &&
+  (account.platform || "").toLowerCase() !== "intcity" &&
   (
     account.session_valid === false ||
     String(account.session_valid).toLowerCase() === "false" ||
