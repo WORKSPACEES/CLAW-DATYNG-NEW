@@ -1285,7 +1285,7 @@ if (isIntCityCard && intCityFields) {
       try {
         const res = await fetch("/api/intcity/parse", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
           body: JSON.stringify({ account_id: account.id, pages }),
         });
         const parseData = await res.json();
@@ -1295,7 +1295,7 @@ if (isIntCityCard && intCityFields) {
 
         const sendRes = await fetch("/api/intcity/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
           body: JSON.stringify({ account_id: account.id, subject, body, limit: 50 }),
         });
         const sendData = await sendRes.json();
@@ -5010,7 +5010,7 @@ async function loadIntCityLeads() {
   if (!tableEl) return;
 
   try {
-    const res = await fetch(`/api/intcity/leads?account_id=${accountId}`);
+    const res = await fetch(`/api/intcity/leads?account_id=${accountId}`, { headers: { "Authorization": localStorage.getItem("claw_auth_token") || "" } });
     const data = await res.json();
     const leads = data.leads || [];
     if (countEl) countEl.textContent = `(${leads.length})`;
@@ -5045,7 +5045,7 @@ document.getElementById("intCityParseBtn")?.addEventListener("click", async () =
   try {
     const res = await fetch("/api/intcity/parse", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
       body: JSON.stringify({ account_id: accountId, pages }),
     });
     const data = await res.json();
@@ -5082,7 +5082,7 @@ document.getElementById("intCitySendBtn")?.addEventListener("click", async () =>
   try {
     const res = await fetch("/api/intcity/send", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
       body: JSON.stringify({ account_id: accountId, subject, body, limit }),
     });
     const data = await res.json();
@@ -5115,7 +5115,7 @@ async function loadContacts() {
       return;
     }
     const accountId = accounts[0].id;
-    const res = await fetch(`/api/intcity/leads?account_id=${accountId}`);
+    const res = await fetch(`/api/intcity/leads?account_id=${accountId}`, { headers: { "Authorization": localStorage.getItem("claw_auth_token") || "" } });
     const data = await res.json();
     let leads = data.leads || [];
 
