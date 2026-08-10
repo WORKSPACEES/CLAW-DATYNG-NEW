@@ -1746,8 +1746,6 @@ form.addEventListener("submit", async (event) => {
       if (!j.vznEmail) { setResult(`Анкета "${j.name || "без имени"}": введи email.`, "bad"); return; }
       if (!j.vznCode)  { setResult(`Анкета "${j.name || "без имени"}": введи код из письма.`, "bad"); return; }
     } else if (j.isIntCity) {
-      if (!j.intCityEmail)    { setResult(`Анкета "${j.name || "без имени"}": введи email.`, "bad"); return; }
-      if (!j.intCityPassword) { setResult(`Анкета "${j.name || "без имени"}": введи пароль приложения.`, "bad"); return; }
     } else {
       if (!j.url.startsWith("http")) { setResult(`Анкета "${j.name || "без имени"}": URL должен начинаться с http.`, "bad"); return; }
       if (!j.rawCookies) { setResult(`Анкета "${j.name || "без имени"}": вставь Cookie-Editor JSON.`, "bad"); return; }
