@@ -1756,7 +1756,10 @@ form.addEventListener("submit", async (event) => {
     try {
       const response = await fetch(WORKER_API + "/api/connect", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": localStorage.getItem("authToken") || "",
+        },
         body: JSON.stringify({
           account_name: j.name,
           profile_url:  j.url || "https://vznakomstve.com/app/",
