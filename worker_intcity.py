@@ -10,10 +10,7 @@ import asyncio
 import os
 import json
 import re
-import smtplib
 from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
 
 import httpx
@@ -229,35 +226,39 @@ def send_emails(
     subject: str,
     body: str,
 ) -> dict:
-    """Отправляет письма через smtp.mail.ru."""
+    """Отправляет письма через Mailersend API."""
+    MAILERSEND_TOKEN = "mlsn.71b948a7cd03a49313ed55f21e567a9ba4d2e773500539ed38e965000ae440a8"
+    SENDER_DOMAIN_EMAIL = "noreply@test-xkjn41mr0604z781.mlsender.net"
     sent = 0
     errors = []
 
-    try:
-        smtp = smtplib.SMTP("smtp.mail.ru", 587, timeout=15)
-        smtp.starttls()
-        smtp.login(sender_email, sender_password)
-        print(f"[INTCITY] SMTP подключён как {sender_email}", flush=True)
-
-        for lead in leads:
-            try:
-                msg = MIMEMultipart()
-                msg["From"] = sender_email
-                msg["To"] = lead["email"]
-                msg["Subject"] = subject
-                msg.attach(MIMEText(body, "plain", "utf-8"))
-                smtp.sendmail(sender_email, lead["email"], msg.as_string())
+    for lead in leads:
+        try:
+            resp = httpx.post(
+                "https://api.mailersend.com/v1/email",
+                headers={
+                    "Authorization": f"Bearer {MAILERSEND_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": {"email": SENDER_DOMAIN_EMAIL, "name": "IntimCity"},
+                    "to": [{"email": lead["email"]}],
+                    "subject": subject,
+                    "text": body,
+                },
+                timeout=15,
+            )
+            if resp.status_code in (200, 202):
                 mark_as_sent(lead["id"])
                 sent += 1
                 print(f"[INTCITY] ✓ Отправлено → {lead['email']}", flush=True)
-            except Exception as e:
-                errors.append(f"{lead['email']}: {e}")
-                print(f"[INTCITY] ✗ Ошибка → {lead['email']}: {e}", flush=True)
-
-        smtp.quit()
-    except Exception as e:
-        print(f"[INTCITY] SMTP ошибка: {e}", flush=True)
-        return {"ok": False, "sent": sent, "error": str(e)}
+            else:
+                err = resp.text[:150]
+                errors.append(f"{lead['email']}: {err}")
+                print(f"[INTCITY] ✗ {resp.status_code} → {lead['email']}: {err}", flush=True)
+        except Exception as e:
+            errors.append(f"{lead['email']}: {e}")
+            print(f"[INTCITY] ✗ Исключение → {lead['email']}: {e}", flush=True)
 
     return {"ok": True, "sent": sent, "errors": errors}
 
