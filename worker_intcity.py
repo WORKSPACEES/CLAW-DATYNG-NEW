@@ -428,6 +428,20 @@ async def process_job(job: dict):
 
             final_status = "cancelled" if result.get("status") == "stopped_by_user" else "done"
             await finish_job(job_id, result, status=final_status)
+
+            # Создаём новую задачу для следующего круга (каждые 5 минут)
+            if final_status == "done":
+                await asyncio.sleep(5 * 60)
+                supabase.table("job_queue").insert({
+                    "account_id": account_id,
+                    "platform": "intCity",
+                    "type": "intcity-split",
+                    "status": "pending",
+                    "payload": job.get("payload", {}),
+                    "created_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.utcnow().isoformat(),
+                }).execute()
+                print(f"[WORKER-INTCITY] Новый круг запущен для {account_id}", flush=True)
             print(f"[WORKER-INTCITY] Задача {job_id} завершена: {result.get('summary')}", flush=True)
 
         except Exception as e:
