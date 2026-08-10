@@ -1734,7 +1734,7 @@ form.addEventListener("submit", async (event) => {
       isIntCity,
       isVzn,
     };
-  }).filter(j => j.name || j.url || j.rawCookies || j.twinbyEmail || j.vznEmail);
+  }).filter(j => j.name || j.url || j.rawCookies || j.twinbyEmail || j.vznEmail || j.isIntCity);
 
   if (!jobs.length) { setResult("Заполни хотя бы одну анкету.", "bad"); return; }
 
