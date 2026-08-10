@@ -234,7 +234,8 @@ def send_emails(
     errors = []
 
     try:
-        smtp = smtplib.SMTP_SSL("smtp.mail.ru", 465)
+        smtp = smtplib.SMTP("smtp.mail.ru", 587, timeout=15)
+        smtp.starttls()
         smtp.login(sender_email, sender_password)
         print(f"[INTCITY] SMTP подключён как {sender_email}", flush=True)
 
