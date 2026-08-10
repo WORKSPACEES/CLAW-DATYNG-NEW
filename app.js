@@ -406,11 +406,13 @@ function addConnectSlot() {
   connectSlots.appendChild(node);
 
   try {
-    const isTwinby = typeof activePlatform !== "undefined" && activePlatform === "Twinby";
-    const isVzn    = typeof activePlatform !== "undefined" && activePlatform === "Vznakomstve";
-    slotEl.querySelector(".slotStandardFields").style.display = (isTwinby || isVzn) ? "none" : "";
-    slotEl.querySelector(".slotTwinbyFields").style.display   = isTwinby ? "" : "none";
-    slotEl.querySelector(".slotVznFields").style.display      = isVzn ? "" : "none";
+    const isTwinby  = typeof activePlatform !== "undefined" && activePlatform === "Twinby";
+    const isVzn     = typeof activePlatform !== "undefined" && activePlatform === "Vznakomstve";
+    const isIntCity = typeof activePlatform !== "undefined" && activePlatform === "intCity";
+    slotEl.querySelector(".slotStandardFields").style.display  = (isTwinby || isVzn || isIntCity) ? "none" : "";
+    slotEl.querySelector(".slotTwinbyFields").style.display    = isTwinby ? "" : "none";
+    slotEl.querySelector(".slotVznFields").style.display       = isVzn ? "" : "none";
+    slotEl.querySelector(".slotIntCityFields").style.display   = isIntCity ? "" : "none";
   } catch(e) {}
 }
 
@@ -493,11 +495,13 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
     activeTabId = null;
     // Переключаем поля в слотах
     document.querySelectorAll(".connectSlot").forEach(slot => {
-      const isTwinby = activePlatform === "Twinby";
-      const isVzn    = activePlatform === "Vznakomstve";
-      slot.querySelector(".slotStandardFields").style.display = (isTwinby || isVzn) ? "none" : "";
-      slot.querySelector(".slotTwinbyFields").style.display   = isTwinby ? "" : "none";
-      slot.querySelector(".slotVznFields").style.display      = isVzn ? "" : "none";
+      const isTwinby  = activePlatform === "Twinby";
+      const isVzn     = activePlatform === "Vznakomstve";
+      const isIntCity = activePlatform === "intCity"; 
+      slot.querySelector(".slotStandardFields").style.display  = (isTwinby || isVzn || isIntCity) ? "none" : "";
+      slot.querySelector(".slotTwinbyFields").style.display    = isTwinby ? "" : "none";
+      slot.querySelector(".slotVznFields").style.display       = isVzn ? "" : "none";
+      slot.querySelector(".slotIntCityFields").style.display   = isIntCity ? "" : "none";
     });
     renderOperatorTabs();
     if (cachedAccounts.length > 0) {
@@ -1399,6 +1403,17 @@ function renderSquareGrid(accounts, statsMap) {
   accountsList.querySelectorAll(".sqGroup").forEach(el => el.remove());
 
   const empty = document.getElementById("gridEmpty");
+  const intCityPanel = document.getElementById("intCityPanel");
+
+  if (activePlatform === "intCity") {
+    if (intCityPanel) intCityPanel.style.display = "block";
+    if (accountsList) accountsList.style.display = "none";
+    loadIntCityLeads();
+    return;
+  } else {
+    if (intCityPanel) intCityPanel.style.display = "none";
+    if (accountsList) accountsList.style.display = "";
+  }
 
   const filtered = accounts.filter(a => {
     if ((a.platform || "").toLowerCase() !== activePlatform.toLowerCase()) return false;
@@ -1585,9 +1600,12 @@ form.addEventListener("submit", async (event) => {
       rawCookies:  (isTwinby || isVzn) ? "" : slotEl.querySelector(".slotCookiesJson").value.trim(),
       twinbyEmail: isTwinby ? slotEl.querySelector(".slotTwinbyEmail").value.trim() : "",
       twinbyCode:  isTwinby ? slotEl.querySelector(".slotTwinbyCode").value.trim() : "",
-      vznEmail:    isVzn ? slotEl.querySelector(".slotVznEmail").value.trim() : "",
-      vznCode:     isVzn ? slotEl.querySelector(".slotVznCode").value.trim() : "",
+      vznEmail:        isVzn ? slotEl.querySelector(".slotVznEmail").value.trim() : "",
+      vznCode:         isVzn ? slotEl.querySelector(".slotVznCode").value.trim() : "",
+      intCityEmail:    isIntCity ? slotEl.querySelector(".slotIntCityEmail").value.trim() : "",
+      intCityPassword: isIntCity ? slotEl.querySelector(".slotIntCityPassword").value.trim() : "",
       isTwinby,
+      isIntCity,
       isVzn,
     };
   }).filter(j => j.name || j.url || j.rawCookies || j.twinbyEmail || j.vznEmail);
@@ -1601,6 +1619,9 @@ form.addEventListener("submit", async (event) => {
     } else if (j.isVzn) {
       if (!j.vznEmail) { setResult(`Анкета "${j.name || "без имени"}": введи email.`, "bad"); return; }
       if (!j.vznCode)  { setResult(`Анкета "${j.name || "без имени"}": введи код из письма.`, "bad"); return; }
+    } else if (j.isIntCity) {
+      if (!j.intCityEmail)    { setResult(`Анкета "${j.name || "без имени"}": введи email.`, "bad"); return; }
+      if (!j.intCityPassword) { setResult(`Анкета "${j.name || "без имени"}": введи пароль приложения.`, "bad"); return; }
     } else {
       if (!j.url.startsWith("http")) { setResult(`Анкета "${j.name || "без имени"}": URL должен начинаться с http.`, "bad"); return; }
       if (!j.rawCookies) { setResult(`Анкета "${j.name || "без имени"}": вставь Cookie-Editor JSON.`, "bad"); return; }
@@ -1628,8 +1649,10 @@ form.addEventListener("submit", async (event) => {
           platform:     activePlatform,
           twinby_email: j.twinbyEmail,
           twinby_code:  j.twinbyCode,
-          vzn_email:    j.vznEmail,
-          vzn_code:     j.vznCode,
+          vzn_email:         j.vznEmail,
+          vzn_code:          j.vznCode,
+          intcity_email:     j.intCityEmail,
+          intcity_password:  j.intCityPassword,
         }),
       });
       const data = await response.json();
@@ -4856,5 +4879,104 @@ async function loadProxySettings() {
     });
   });
 }
+
+// ── intCity UI ────────────────────────────────────────────
+
+async function loadIntCityLeads() {
+  const accounts = cachedAccounts.filter(a => (a.platform || "").toLowerCase() === "intcity");
+  if (!accounts.length) return;
+  const accountId = accounts[0].id;
+
+  const tableEl = document.getElementById("intCityLeadsTable");
+  const countEl = document.getElementById("intCityLeadsCount");
+  if (!tableEl) return;
+
+  try {
+    const res = await fetch(`/api/intcity/leads?account_id=${accountId}`);
+    const data = await res.json();
+    const leads = data.leads || [];
+    if (countEl) countEl.textContent = `(${leads.length})`;
+    if (!leads.length) {
+      tableEl.innerHTML = '<div style="color:var(--text2);">Email адресов пока нет. Нажми "Парсить".</div>';
+      return;
+    }
+    tableEl.innerHTML = leads.map(l => `
+      <div style="display:flex;gap:12px;padding:4px 0;border-bottom:1px solid rgba(255,255,255,.05);">
+        <span style="color:var(--cyan);flex:1;">${l.email}</span>
+        <span style="color:var(--text2);font-size:11px;">${l.sent_at ? "✓ отправлено" : "не отправлено"}</span>
+        <a href="${l.ad_url}" target="_blank" style="color:var(--text2);font-size:11px;">объявление</a>
+      </div>
+    `).join("");
+  } catch (e) {
+    if (tableEl) tableEl.innerHTML = `<div style="color:#fb7185;">Ошибка: ${e.message}</div>`;
+  }
+}
+
+document.getElementById("intCityParseBtn")?.addEventListener("click", async () => {
+  const accounts = cachedAccounts.filter(a => (a.platform || "").toLowerCase() === "intcity");
+  if (!accounts.length) { alert("Сначала подключи аккаунт intCity"); return; }
+  const accountId = accounts[0].id;
+  const pages = parseInt(document.getElementById("intCityPages")?.value) || 3;
+  const resultEl = document.getElementById("intCityParseResult");
+  const btn = document.getElementById("intCityParseBtn");
+
+  btn.disabled = true;
+  btn.textContent = "Парсю...";
+  if (resultEl) { resultEl.textContent = "Парсю объявления..."; resultEl.className = "result"; }
+
+  try {
+    const res = await fetch("/api/intcity/parse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: accountId, pages }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка парсинга");
+    if (resultEl) { resultEl.textContent = data.summary; resultEl.className = "result good"; }
+    loadIntCityLeads();
+  } catch (e) {
+    if (resultEl) { resultEl.textContent = e.message; resultEl.className = "result bad"; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "🔍 Парсить";
+  }
+});
+
+document.getElementById("intCityRefreshLeads")?.addEventListener("click", loadIntCityLeads);
+
+document.getElementById("intCitySendBtn")?.addEventListener("click", async () => {
+  const accounts = cachedAccounts.filter(a => (a.platform || "").toLowerCase() === "intcity");
+  if (!accounts.length) { alert("Сначала подключи аккаунт intCity"); return; }
+  const accountId = accounts[0].id;
+  const subject = document.getElementById("intCitySubject")?.value.trim();
+  const body = document.getElementById("intCityBody")?.value.trim();
+  const limit = parseInt(document.getElementById("intCityLimit")?.value) || 50;
+  const resultEl = document.getElementById("intCitySendResult");
+  const btn = document.getElementById("intCitySendBtn");
+
+  if (!subject) { alert("Введи тему письма"); return; }
+  if (!body) { alert("Введи текст письма"); return; }
+
+  btn.disabled = true;
+  btn.textContent = "Отправляю...";
+  if (resultEl) { resultEl.textContent = "Отправляю рассылку..."; resultEl.className = "result"; }
+
+  try {
+    const res = await fetch("/api/intcity/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ account_id: accountId, subject, body, limit }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка отправки");
+    if (resultEl) { resultEl.textContent = data.summary; resultEl.className = "result good"; }
+    loadIntCityLeads();
+  } catch (e) {
+    if (resultEl) { resultEl.textContent = e.message; resultEl.className = "result bad"; }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "📨 Отправить рассылку";
+  }
+});
 
 window.loadProxySettings = loadProxySettings;
