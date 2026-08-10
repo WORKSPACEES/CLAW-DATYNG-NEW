@@ -253,6 +253,13 @@ def send_emails(
 
     for lead in leads:
         try:
+            # Пропускаем невалидные email
+            if not re.match(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$', lead["email"]):
+                print(f"[INTCITY] Пропуск невалидного: {lead['email']}", flush=True)
+                mark_as_sent(lead["id"])
+                continue
+            import time as _time
+            _time.sleep(2)
             import urllib.parse, uuid
             params = {
                 "id": uuid.uuid4().hex,
