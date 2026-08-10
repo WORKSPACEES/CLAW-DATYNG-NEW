@@ -1325,14 +1325,8 @@ if (isIntCityCard && intCityFields) {
       cardEl?.classList.remove("sqActive");
     }
 
-    runningSplits.delete(account.id);
-    await setAccountRunStatus(account.id, "idle", "", "");
-    splitBtn.classList.remove("running");
-    splitBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Сплит';
-    splitBtn.disabled = false;
-    splitInput.disabled = false;
-    cardEl?.classList.remove("sqActive");
-    loadAccounts();
+    // НЕ сбрасываем состояние — воркер работает в фоне бесконечно
+    // Кнопка Стоп отменит задачу через job_queue
   };
 }
 
