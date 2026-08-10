@@ -578,54 +578,31 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
             "images_found": 0,
             "checked_at": datetime.now().isoformat(timespec="seconds"),
         }
-        # Авто-логин на e.mail.ru для получения куков и токена
+        # Парсим Cookie Editor JSON и тянем токен со страницы
         mail_cookie_str = ""
         mail_token = ""
         try:
-            import httpx as _httpx
-            login_resp = _httpx.post(
-                "https://auth.mail.ru/cgi-bin/auth",
-                data={
-                    "Login": payload.intcity_email,
-                    "Password": payload.intcity_password,
-                    "Domain": payload.intcity_email.split("@")[1] if "@" in payload.intcity_email else "mail.ru",
-                    "new_auth_form": "1",
-                    "saveauth": "1",
+            import httpx as _httpx, re as _re
+            cookie_list = json.loads(payload.cookies_raw)
+            mail_cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookie_list if c.get("name") and c.get("value"))
+            print(f"[intCity] Собрано кук: {len(cookie_list)}", flush=True)
+            page_resp = _httpx.get(
+                "https://e.mail.ru/inbox/",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                    "Cookie": mail_cookie_str,
                 },
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"},
-                follow_redirects=True,
                 timeout=15,
+                follow_redirects=True,
             )
-            # Собираем куки из всей цепочки редиректов
-            all_cookies = {}
-            for r in login_resp.history:
-                all_cookies.update(dict(r.cookies))
-            all_cookies.update(dict(login_resp.cookies))
-
-            if all_cookies:
-                mail_cookie_str = "; ".join(f"{k}={v}" for k, v in all_cookies.items())
-                # Тянем токен со страницы почты
-                page_resp = _httpx.get(
-                    "https://e.mail.ru/inbox/",
-                    headers={
-                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
-                        "Cookie": mail_cookie_str,
-                    },
-                    timeout=15,
-                    follow_redirects=True,
-                )
-                # Ищем токен в HTML
-                import re as _re
-                token_match = _re.search(r'[a-f0-9]{32}:[A-Za-z0-9_\-+/=.]{20,}', page_resp.text)
-                if token_match:
-                    mail_token = token_match.group(0)
-                    print(f"[intCity] Токен получен автоматически: {mail_token[:20]}...", flush=True)
-                else:
-                    print(f"[intCity] Токен не найден в HTML, нужно вставить вручную", flush=True)
+            token_match = _re.search(r'[a-f0-9]{32}:[A-Za-z0-9_\-+/=.]{20,}', page_resp.text)
+            if token_match:
+                mail_token = token_match.group(0)
+                print(f"[intCity] Токен получен: {mail_token[:20]}...", flush=True)
             else:
-                print(f"[intCity] Куки не получены при логине", flush=True)
+                print(f"[intCity] Токен не найден в HTML", flush=True)
         except Exception as e:
-            print(f"[intCity] Ошибка авто-логина: {e}", flush=True)
+            print(f"[intCity] Ошибка при парсинге кук: {e}", flush=True)
 
         cookies_raw = json.dumps({
             "email": "",
