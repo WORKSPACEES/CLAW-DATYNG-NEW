@@ -255,6 +255,7 @@ def send_emails(
 
         smtp.quit()
     except Exception as e:
+        print(f"[INTCITY] SMTP ошибка: {e}", flush=True)
         return {"ok": False, "sent": sent, "error": str(e)}
 
     return {"ok": True, "sent": sent, "errors": errors}
@@ -319,7 +320,9 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
         return {"ok": True, "status": "stopped_by_user", "summary": "Остановлено"}
 
     # Отправляем
+    print(f"[INTCITY] Запускаем send_emails: sender={sender_email!r}, leads={len(leads)}", flush=True)
     result = send_emails(sender_email, sender_password, leads, subject, body)
+    print(f"[INTCITY] send_emails результат: {result}", flush=True)
 
     return {
         "ok": result["ok"],
