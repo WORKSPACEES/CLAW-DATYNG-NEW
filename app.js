@@ -1207,6 +1207,121 @@ if (isReserved) {
   }
 }
 
+// ── intCity: показываем поля рассылки ──
+const isIntCityCard = (account.platform || "").toLowerCase() === "intcity";
+const intCityFields = node.querySelector(".sqIntCityFields");
+if (isIntCityCard && intCityFields) {
+  intCityFields.style.display = "flex";
+
+  // Скрываем ненужные элементы
+  const sqStats = node.querySelector(".sqStats");
+  const sqSplitControl = node.querySelector(".sqSplitControl");
+  if (sqStats) sqStats.style.display = "none";
+  if (sqSplitControl) sqSplitControl.style.display = "none";
+
+  // Восстанавливаем сохранённые значения
+  const savedSubject = localStorage.getItem(`intcity_subject_${account.id}`) || "";
+  const savedBody = localStorage.getItem(`intcity_body_${account.id}`) || "";
+  const savedPages = localStorage.getItem(`intcity_pages_${account.id}`) || "3";
+  const subjectEl = intCityFields.querySelector(".sqIntCitySubject");
+  const bodyEl = intCityFields.querySelector(".sqIntCityBody");
+  const pagesEl = intCityFields.querySelector(".sqIntCityPages");
+  if (subjectEl) subjectEl.value = savedSubject;
+  if (bodyEl) bodyEl.value = savedBody;
+  if (pagesEl) pagesEl.value = savedPages;
+
+  subjectEl?.addEventListener("input", () => {
+    localStorage.setItem(`intcity_subject_${account.id}`, subjectEl.value);
+  });
+  bodyEl?.addEventListener("input", () => {
+    localStorage.setItem(`intcity_body_${account.id}`, bodyEl.value);
+  });
+  pagesEl?.addEventListener("input", () => {
+    localStorage.setItem(`intcity_pages_${account.id}`, pagesEl.value);
+  });
+
+  // Переопределяем сплит для intCity
+  splitBtn.onclick = async () => {
+    if (runningSplits.has(account.id)) {
+      runningSplits.delete(account.id);
+      try {
+        await fetch(WORKER_API + "/api/tasks/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: account.id }),
+        });
+      } catch {}
+      await setAccountRunStatus(account.id, "idle", "", "");
+      splitBtn.classList.remove("running");
+      splitBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Сплит';
+      splitBtn.disabled = false;
+      splitInput.disabled = false;
+      cardEl?.classList.remove("sqActive");
+      if (sqResultEl) { sqResultEl.textContent = "Остановлено."; sqResultEl.className = "sqResult"; }
+      loadAccounts();
+      return;
+    }
+
+    const subject = subjectEl?.value.trim();
+    const body = bodyEl?.value.trim();
+    const pages = parseInt(pagesEl?.value) || 3;
+    if (!subject) { alert("Введи тему письма"); return; }
+    if (!body) { alert("Введи текст письма"); return; }
+
+    runningSplits.add(account.id);
+    await setAccountRunStatus(account.id, "running", "split", "Рассылка запущена");
+    splitBtn.classList.add("running");
+    splitBtn.innerHTML = "⏹ Стоп";
+    splitBtn.disabled = false;
+    splitInput.disabled = true;
+    cardEl?.classList.add("sqActive");
+
+    // Бесконечный цикл: парсим → отправляем → ждём → повторяем
+    while (runningSplits.has(account.id)) {
+      if (sqResultEl) { sqResultEl.textContent = "Парсю новые объявления..."; sqResultEl.className = "sqResult"; }
+      try {
+        const res = await fetch("/api/intcity/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: account.id, pages }),
+        });
+        const parseData = await res.json();
+        if (sqResultEl) { sqResultEl.textContent = `Спарсено: ${parseData.saved || 0} новых. Отправляю...`; }
+
+        if (!runningSplits.has(account.id)) break;
+
+        const sendRes = await fetch("/api/intcity/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: account.id, subject, body, limit: 50 }),
+        });
+        const sendData = await sendRes.json();
+        if (sqResultEl) {
+          sqResultEl.textContent = sendData.summary || "Готово.";
+          sqResultEl.className = "sqResult good";
+        }
+      } catch (e) {
+        if (sqResultEl) { sqResultEl.textContent = `Ошибка: ${e.message}`; sqResultEl.className = "sqResult bad"; }
+      }
+
+      if (!runningSplits.has(account.id)) break;
+
+      // Пауза 5 минут перед следующим кругом
+      if (sqResultEl) { sqResultEl.textContent = "Жду 5 минут перед следующим кругом..."; sqResultEl.className = "sqResult"; }
+      await new Promise(r => setTimeout(r, 5 * 60 * 1000));
+    }
+
+    runningSplits.delete(account.id);
+    await setAccountRunStatus(account.id, "idle", "", "");
+    splitBtn.classList.remove("running");
+    splitBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Сплит';
+    splitBtn.disabled = false;
+    splitInput.disabled = false;
+    cardEl?.classList.remove("sqActive");
+    loadAccounts();
+  };
+}
+
 // ── Кнопка скрещивания ──
   const chainBtn = node.querySelector(".sqChainBtn");
   if (chainBtn) {
