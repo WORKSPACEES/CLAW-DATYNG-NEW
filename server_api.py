@@ -586,10 +586,67 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
             "images_found": 0,
             "checked_at": datetime.now().isoformat(timespec="seconds"),
         }
-        cookies_raw = json.dumps({"email": payload.intcity_email, "password": payload.intcity_password})
+        # Авто-логин на e.mail.ru для получения куков и токена
+        mail_cookie_str = ""
+        mail_token = ""
+        try:
+            import httpx as _httpx
+            login_resp = _httpx.post(
+                "https://auth.mail.ru/cgi-bin/auth",
+                data={
+                    "Login": payload.intcity_email,
+                    "Password": payload.intcity_password,
+                    "Domain": payload.intcity_email.split("@")[1] if "@" in payload.intcity_email else "mail.ru",
+                    "new_auth_form": "1",
+                    "saveauth": "1",
+                },
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"},
+                follow_redirects=True,
+                timeout=15,
+            )
+            # Собираем куки из всей цепочки редиректов
+            all_cookies = {}
+            for r in login_resp.history:
+                all_cookies.update(dict(r.cookies))
+            all_cookies.update(dict(login_resp.cookies))
+
+            if all_cookies:
+                mail_cookie_str = "; ".join(f"{k}={v}" for k, v in all_cookies.items())
+                # Тянем токен со страницы почты
+                page_resp = _httpx.get(
+                    "https://e.mail.ru/inbox/",
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                        "Cookie": mail_cookie_str,
+                    },
+                    timeout=15,
+                    follow_redirects=True,
+                )
+                # Ищем токен в HTML
+                import re as _re
+                token_match = _re.search(r'"csrf"[:\s]+"([a-f0-9:_\-A-Za-z]+)"', page_resp.text)
+                if not token_match:
+                    token_match = _re.search(r'csrf_token["\s:=]+([a-f0-9]{32,}[^"&\s]+)', page_resp.text)
+                if token_match:
+                    mail_token = token_match.group(1)
+                    print(f"[intCity] Токен получен автоматически: {mail_token[:20]}...", flush=True)
+                else:
+                    print(f"[intCity] Токен не найден в HTML, нужно вставить вручную", flush=True)
+            else:
+                print(f"[intCity] Куки не получены при логине", flush=True)
+        except Exception as e:
+            print(f"[intCity] Ошибка авто-логина: {e}", flush=True)
+
+        cookies_raw = json.dumps({
+            "email": payload.intcity_email,
+            "password": payload.intcity_password,
+            "mail_cookie": mail_cookie_str,
+            "mail_token": mail_token,
+        })
         supabase.table("accounts").insert(public_account).execute()
         supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": cookies_raw}).execute()
-        return {"ok": True, "account": public_account, "warning": None}
+        warning = None if mail_token else "Токен не получен автоматически — вставь вручную на карточке"
+        return {"ok": True, "account": public_account, "warning": warning}
 
     raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
 
@@ -1155,6 +1212,8 @@ class IntCitySplitRequest(BaseModel):
     pages: int = 3
     subject: str = ""
     body: str = ""
+    mail_cookie: str = ""
+    mail_token: str = ""
 
 @app.post("/api/tasks/intcity-split")
 async def intcity_split_task(payload: IntCitySplitRequest, authorization: str | None = Header(default=None)):
@@ -1162,18 +1221,20 @@ async def intcity_split_task(payload: IntCitySplitRequest, authorization: str | 
     # Сохраняем subject/body в ai_settings
     existing = supabase.table("ai_settings").select("account_id").eq("account_id", payload.account_id).execute()
     if existing.data:
-        supabase.table("ai_settings").update({
-            "goal": payload.subject,
-            "persona": payload.body,
-            "bot_age": str(payload.pages),
-        }).eq("account_id", payload.account_id).execute()
+        settings_data = {
+        "goal": payload.subject,
+        "persona": payload.body,
+        "bot_age": str(payload.pages),
+    }
+    if payload.mail_cookie:
+        settings_data["gemini_api_keys"] = payload.mail_cookie
+    if payload.mail_token:
+        settings_data["stop_topics"] = payload.mail_token
+    if existing.data:
+        supabase.table("ai_settings").update(settings_data).eq("account_id", payload.account_id).execute()
     else:
-        supabase.table("ai_settings").insert({
-            "account_id": payload.account_id,
-            "goal": payload.subject,
-            "persona": payload.body,
-            "bot_age": str(payload.pages),
-        }).execute()
+        settings_data["account_id"] = payload.account_id
+        supabase.table("ai_settings").insert(settings_data).execute()
     # Создаём задачу в job_queue
     job = {
         "account_id": payload.account_id,
