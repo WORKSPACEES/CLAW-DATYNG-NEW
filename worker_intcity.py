@@ -188,8 +188,8 @@ def save_leads(found: list[dict], owner_email: str) -> int:
                 "owner_email": owner_email,
             }, on_conflict="email").execute()
             saved += 1
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[INTCITY] save_leads ошибка: {e}", flush=True)
     return saved
 
 
