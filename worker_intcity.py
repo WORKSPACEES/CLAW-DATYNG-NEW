@@ -161,9 +161,13 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
         for ad_url in ad_urls:
             try:
                 resp = await client.get(ad_url)
-                emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', resp.text)
-                emails = [e for e in emails if not any(x in e for x in ["intimcity", "example", "test", "sentry"])]
-                for email in set(emails):
+                # Сначала ищем в атрибуте data-bbcontact (листинг)
+                bb_emails = re.findall(r'data-bbcontact="([^"]*@[^"]*)"', resp.text)
+                # Потом в тексте (страница объявления)
+                text_emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', resp.text)
+                all_emails = list(set(bb_emails + text_emails))
+                all_emails = [e for e in all_emails if not any(x in e for x in ["intimcity", "example", "test", "sentry"])]
+                for email in all_emails:
                     found.append({"email": email, "ad_url": ad_url})
             except Exception as e:
                 print(f"[INTCITY] Ошибка парсинга {ad_url}: {e}", flush=True)
