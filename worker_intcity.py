@@ -410,7 +410,12 @@ async def process_job(job: dict):
         hb_task = asyncio.create_task(heartbeat_job(job_id))
 
         try:
+            job_type = job.get("type", "intcity-split")
             settings = get_ai_settings(account_id)
+
+            if job_type != "intcity-split":
+                await finish_job(job_id, {"ok": False, "error": f"Неизвестный тип: {job_type}"}, status="error")
+                return
 
             result = await asyncio.get_event_loop().run_in_executor(
                 None,
