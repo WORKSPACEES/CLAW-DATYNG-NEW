@@ -222,6 +222,8 @@ deleteTabConfirmBtn?.addEventListener("click", async () => {
     if (activeTabId === tab.id) {
       activeTabId = null;
       document.querySelector('.platformBtn[data-platform="Mamba"]')?.classList.add("active");
+      const connectPanel = document.getElementById("connectForm");
+      if (connectPanel) connectPanel.style.display = activePlatform === "intCity" ? "none" : "";
       activePlatform = "Mamba";
     }
     closeDeleteTabModal();
@@ -503,6 +505,8 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
       slot.querySelector(".slotVznFields").style.display       = isVzn ? "" : "none";
       slot.querySelector(".slotIntCityFields").style.display   = isIntCity ? "" : "none";
     });
+    const connectPanel = document.getElementById("connectForm");
+    if (connectPanel) connectPanel.style.display = activePlatform === "intCity" ? "none" : "";
     renderOperatorTabs();
     if (cachedAccounts.length > 0) {
       renderSquareGridFromCache();
@@ -1521,15 +1525,8 @@ function renderSquareGrid(accounts, statsMap) {
   const empty = document.getElementById("gridEmpty");
   const intCityPanel = document.getElementById("intCityPanel");
 
-  if (activePlatform === "intCity") {
-    if (intCityPanel) intCityPanel.style.display = "block";
-    if (accountsList) accountsList.style.display = "none";
-    loadIntCityLeads();
-    return;
-  } else {
-    if (intCityPanel) intCityPanel.style.display = "none";
-    if (accountsList) accountsList.style.display = "";
-  }
+  if (intCityPanel) intCityPanel.style.display = "none";
+  if (accountsList) accountsList.style.display = "";
 
   const filtered = accounts.filter(a => {
     if ((a.platform || "").toLowerCase() !== activePlatform.toLowerCase()) return false;
