@@ -1210,6 +1210,11 @@ if (isReserved) {
   }
 }
 
+// intCity — дефолтное фото
+if ((account.platform || "").toLowerCase() === "intcity" && !account.photo_url) {
+  account.photo_url = "/intcity_logo.png";
+}
+
 // ── intCity: показываем поля рассылки ──
 const isIntCityCard = (account.platform || "").toLowerCase() === "intcity";
 const intCityFields = node.querySelector(".sqIntCityFields");
