@@ -225,37 +225,78 @@ def send_emails(
     leads: list[dict],
     subject: str,
     body: str,
+    mail_cookie: str = "",
+    mail_token: str = "",
 ) -> dict:
-    """Отправляет письма через Mailersend API."""
-    MAILERSEND_TOKEN = "mlsn.71b948a7cd03a49313ed55f21e567a9ba4d2e773500539ed38e965000ae440a8"
-    SENDER_DOMAIN_EMAIL = "noreply@test-xkjn41mr0604z781.mlsender.net"
+    """Отправляет письма через mail.ru web API."""
     sent = 0
     errors = []
 
+    if not mail_cookie or not mail_token:
+        return {"ok": False, "sent": 0, "error": "Нет cookie/token — вставь их на карточке intCity"}
+
+    # Парсим cookie — поддерживаем и JSON от Cookie Editor, и сырую строку
+    cookie_str = mail_cookie.strip()
+    if cookie_str.startswith("["):
+        try:
+            cookie_list = json.loads(cookie_str)
+            cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookie_list if c.get("name") and c.get("value"))
+            print(f"[INTCITY] Cookie собран из JSON: {len(cookie_list)} кук", flush=True)
+        except Exception as e:
+            print(f"[INTCITY] Ошибка парсинга cookie JSON: {e}", flush=True)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": cookie_str,
+    }
+
     for lead in leads:
         try:
+            import urllib.parse, uuid
+            params = {
+                "id": uuid.uuid4().hex,
+                "source": '{"draft":"","reply":"","forward":"","schedule":""}',
+                "headers": "{}",
+                "template": "0",
+                "sign": "0",
+                "remind": "0",
+                "delivery_report": "false",
+                "receipt": "false",
+                "subject": subject,
+                "priority": "3",
+                "send_date": "",
+                "body": f'{{"html":"{body}","text":"{body}"}}',
+                "from": f"{sender_email} <{sender_email}>",
+                "correspondents": f'{{"to":"{lead["email"]}","cc":"","bcc":"","reply_to":""}}',
+                "folder_id": "",
+                "email": sender_email,
+                "htmlencoded": "false",
+                "token": mail_token,
+                "attaches": '{"list":[]}',
+                "delay_for_cancellation": "true",
+            }
             resp = httpx.post(
-                "https://api.mailersend.com/v1/email",
-                headers={
-                    "Authorization": f"Bearer {MAILERSEND_TOKEN}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "from": {"email": SENDER_DOMAIN_EMAIL, "name": "IntimCity"},
-                    "to": [{"email": lead["email"]}],
-                    "subject": subject,
-                    "text": body,
-                },
-                timeout=15,
+                "https://e.mail.ru/api/v1/messages/send",
+                headers=headers,
+                content=urllib.parse.urlencode(params),
+                timeout=20,
+                follow_redirects=True,
             )
-            if resp.status_code in (200, 202):
-                mark_as_sent(lead["id"])
-                sent += 1
-                print(f"[INTCITY] ✓ Отправлено → {lead['email']}", flush=True)
+            print(f"[INTCITY] mail.ru status={resp.status_code} body={resp.text[:200]}", flush=True)
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("status") == "ok" or data.get("id"):
+                    mark_as_sent(lead["id"])
+                    sent += 1
+                    print(f"[INTCITY] ✓ Отправлено → {lead['email']}", flush=True)
+                else:
+                    err = str(data)[:100]
+                    errors.append(f"{lead['email']}: {err}")
+                    print(f"[INTCITY] ✗ API ошибка → {lead['email']}: {err}", flush=True)
             else:
-                err = resp.text[:150]
-                errors.append(f"{lead['email']}: {err}")
-                print(f"[INTCITY] ✗ {resp.status_code} → {lead['email']}: {err}", flush=True)
+                errors.append(f"{lead['email']}: HTTP {resp.status_code}")
+                print(f"[INTCITY] ✗ HTTP {resp.status_code} → {lead['email']}", flush=True)
         except Exception as e:
             errors.append(f"{lead['email']}: {e}")
             print(f"[INTCITY] ✗ Исключение → {lead['email']}: {e}", flush=True)
@@ -284,6 +325,16 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
     subject = settings.get("goal", "") or "Привет с intimcity"
     body = settings.get("persona", "") or "Привет! Увидел(а) ваше объявление на intimcity. Напишите мне!"
     pages = int(settings.get("bot_age", "3") or "3")
+    # Сначала берём из ai_settings (вставленные вручную через карточку)
+    mail_cookie = settings.get("gemini_api_keys", "") or ""
+    mail_token = settings.get("stop_topics", "") or ""
+    # Если нет — берём авто-полученные при подключении из cookies_raw
+    if not mail_cookie or not mail_token:
+        creds_full = get_account_creds(account_id)
+        if not mail_cookie:
+            mail_cookie = creds_full.get("mail_cookie", "") or ""
+        if not mail_token:
+            mail_token = creds_full.get("mail_token", "") or ""
 
     owner_email = get_owner_email(account_id)
     if not owner_email:
@@ -323,7 +374,7 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
 
     # Отправляем
     print(f"[INTCITY] Запускаем send_emails: sender={sender_email!r}, leads={len(leads)}", flush=True)
-    result = send_emails(sender_email, sender_password, leads, subject, body)
+    result = send_emails(sender_email, sender_password, leads, subject, body, mail_cookie, mail_token)
     print(f"[INTCITY] send_emails результат: {result}", flush=True)
 
     return {
