@@ -664,7 +664,8 @@ const pageInfo = {
   tasks:     { title: "Задачи",           subtitle: "Лог выполненных задач." },
   analytics: { title: "Аналитика",        subtitle: "Отчёты, статистика и данные по подключённым анкетам." },
   tables:    { title: "Таблица ключей",   subtitle: "API-ключи Groq и Gemini — управление и привязка к анкетам." },
-  settings:  { title: "Настройки",        subtitle: "Авторизация, профиль администратора и системные настойки." },
+  contacts:  { title: "Контакты",          subtitle: "Все запарсенные email адреса с intimcity." },
+  settings:  { title: "Настройки",         subtitle: "Авторизация, профиль администратора и системные настойки." },
 };
 
 // ── Helpers ───────────────────────────────────────────────
@@ -1637,6 +1638,9 @@ function openPage(pageName) {
   }
   if (pageName === "settings") {
     setTimeout(() => loadProxySettings(), 150);
+  }
+  if (pageName === "contacts") {
+    loadContacts();
   }
 }
 
@@ -5092,6 +5096,78 @@ document.getElementById("intCitySendBtn")?.addEventListener("click", async () =>
     btn.disabled = false;
     btn.textContent = "📨 Отправить рассылку";
   }
+});
+
+// ── КОНТАКТЫ ────────────────────────────────────────────
+
+async function loadContacts() {
+  const tableEl = document.getElementById("contactsTable");
+  const countEl = document.getElementById("contactsTotalCount");
+  const search = document.getElementById("contactsSearch")?.value.trim().toLowerCase() || "";
+  const filter = document.getElementById("contactsFilter")?.value || "all";
+  if (!tableEl) return;
+
+  tableEl.innerHTML = '<div style="color:var(--text2);">Загрузка...</div>';
+
+  try {
+    const accounts = cachedAccounts.filter(a => (a.platform || "").toLowerCase() === "intcity");
+    if (!accounts.length) {
+      tableEl.innerHTML = '<div style="color:var(--text2);">Нет подключённых аккаунтов intCity.</div>';
+      return;
+    }
+    const accountId = accounts[0].id;
+    const res = await fetch(`/api/intcity/leads?account_id=${accountId}`);
+    const data = await res.json();
+    let leads = data.leads || [];
+
+    if (countEl) countEl.textContent = `(всего: ${leads.length})`;
+
+    // Фильтрация
+    if (filter === "sent") leads = leads.filter(l => l.sent_at);
+    if (filter === "unsent") leads = leads.filter(l => !l.sent_at);
+    if (search) leads = leads.filter(l => l.email.toLowerCase().includes(search));
+
+    if (!leads.length) {
+      tableEl.innerHTML = '<div style="color:var(--text2);">Нет контактов по фильтру.</div>';
+      return;
+    }
+
+    tableEl.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 140px 1fr;gap:0;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden;">
+        <div style="padding:8px 12px;background:rgba(255,255,255,.04);font-weight:600;color:var(--text2);font-size:11px;">EMAIL</div>
+        <div style="padding:8px 12px;background:rgba(255,255,255,.04);font-weight:600;color:var(--text2);font-size:11px;">СТАТУС</div>
+        <div style="padding:8px 12px;background:rgba(255,255,255,.04);font-weight:600;color:var(--text2);font-size:11px;">ИСТОЧНИК</div>
+        ${leads.map(l => `
+          <div style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.05);color:var(--cyan);">${l.email}</div>
+          <div style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.05);color:${l.sent_at ? "var(--green)" : "var(--text2)"};">${l.sent_at ? "✓ отправлено" : "ожидает"}</div>
+          <div style="padding:8px 12px;border-top:1px solid rgba(255,255,255,.05);"><a href="${l.ad_url}" target="_blank" style="color:var(--text2);text-decoration:none;font-size:11px;">объявление ↗</a></div>
+        `).join("")}
+      </div>
+    `;
+  } catch (e) {
+    tableEl.innerHTML = `<div style="color:#fb7185;">Ошибка: ${e.message}</div>`;
+  }
+}
+
+document.getElementById("contactsRefreshBtn")?.addEventListener("click", loadContacts);
+
+document.getElementById("contactsSearch")?.addEventListener("input", loadContacts);
+document.getElementById("contactsFilter")?.addEventListener("change", loadContacts);
+
+document.getElementById("contactsExportBtn")?.addEventListener("click", async () => {
+  const accounts = cachedAccounts.filter(a => (a.platform || "").toLowerCase() === "intcity");
+  if (!accounts.length) { alert("Нет аккаунтов intCity"); return; }
+  const res = await fetch(`/api/intcity/leads?account_id=${accounts[0].id}`);
+  const data = await res.json();
+  const leads = data.leads || [];
+  const csv = "email,status,ad_url\n" + leads.map(l =>
+    `${l.email},${l.sent_at ? "sent" : "unsent"},${l.ad_url}`
+  ).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = "intcity_contacts.csv";
+  a.click(); URL.revokeObjectURL(url);
 });
 
 window.loadProxySettings = loadProxySettings;
