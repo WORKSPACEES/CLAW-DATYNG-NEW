@@ -626,7 +626,7 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
                 import re as _re
                 token_match = _re.search(r'[a-f0-9]{32}:[A-Za-z0-9_\-+/=.]{20,}', page_resp.text)
                 if token_match:
-                    mail_token = token_match.group(1)
+                    mail_token = token_match.group(0)
                     print(f"[intCity] Токен получен автоматически: {mail_token[:20]}...", flush=True)
                 else:
                     print(f"[intCity] Токен не найден в HTML, нужно вставить вручную", flush=True)
@@ -1218,8 +1218,7 @@ async def intcity_split_task(payload: IntCitySplitRequest, authorization: str | 
     session = require_auth(authorization)
     # Сохраняем subject/body в ai_settings
     existing = supabase.table("ai_settings").select("account_id").eq("account_id", payload.account_id).execute()
-    if existing.data:
-        settings_data = {
+    settings_data = {
         "goal": payload.subject,
         "persona": payload.body,
         "bot_age": str(payload.pages),
@@ -1228,11 +1227,14 @@ async def intcity_split_task(payload: IntCitySplitRequest, authorization: str | 
         settings_data["gemini_api_keys"] = payload.mail_cookie
     if payload.mail_token:
         settings_data["stop_topics"] = payload.mail_token
-    if existing.data:
-        supabase.table("ai_settings").update(settings_data).eq("account_id", payload.account_id).execute()
-    else:
-        settings_data["account_id"] = payload.account_id
-        supabase.table("ai_settings").insert(settings_data).execute()
+    try:
+        if existing.data:
+            supabase.table("ai_settings").update(settings_data).eq("account_id", payload.account_id).execute()
+        else:
+            settings_data["account_id"] = payload.account_id
+            supabase.table("ai_settings").insert(settings_data).execute()
+    except Exception as e:
+        print(f"[intCity] ai_settings save error: {e}", flush=True)
     # Создаём задачу в job_queue
     job = {
         "account_id": payload.account_id,
