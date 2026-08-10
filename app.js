@@ -504,7 +504,7 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
       slot.querySelector(".slotIntCityFields").style.display   = isIntCity ? "" : "none";
     });
     const connectPanel = document.getElementById("connectForm");
-    if (connectPanel) connectPanel.style.display = activePlatform === "intCity" ? "none" : "";
+    if (connectPanel) connectPanel.style.display = "";
     renderOperatorTabs();
     if (cachedAccounts.length > 0) {
       renderSquareGridFromCache();
