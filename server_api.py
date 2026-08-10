@@ -1160,7 +1160,7 @@ class IntCitySplitRequest(BaseModel):
 async def intcity_split_task(payload: IntCitySplitRequest, authorization: str | None = Header(default=None)):
     session = require_auth(authorization)
     # Сохраняем subject/body в ai_settings
-    existing = supabase.table("ai_settings").select("id").eq("account_id", payload.account_id).execute()
+    existing = supabase.table("ai_settings").select("account_id").eq("account_id", payload.account_id).execute()
     if existing.data:
         supabase.table("ai_settings").update({
             "goal": payload.subject,
