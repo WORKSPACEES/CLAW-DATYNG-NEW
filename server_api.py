@@ -624,9 +624,7 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
                 )
                 # Ищем токен в HTML
                 import re as _re
-                token_match = _re.search(r'"csrf"[:\s]+"([a-f0-9:_\-A-Za-z]+)"', page_resp.text)
-                if not token_match:
-                    token_match = _re.search(r'csrf_token["\s:=]+([a-f0-9]{32,}[^"&\s]+)', page_resp.text)
+                token_match = _re.search(r'[a-f0-9]{32}:[A-Za-z0-9_\-+/=.]{20,}', page_resp.text)
                 if token_match:
                     mail_token = token_match.group(1)
                     print(f"[intCity] Токен получен автоматически: {mail_token[:20]}...", flush=True)
