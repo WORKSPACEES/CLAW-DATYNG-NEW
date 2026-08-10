@@ -132,48 +132,63 @@ def get_owner_email(account_id: str) -> str:
 # ══════════════════════════════════════════════════════════
 
 async def parse_intcity(pages: int = 3) -> list[dict]:
-    """Парсит объявления и возвращает список {email, ad_url}."""
     BASE_URL = "https://a.intimcity.co"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
         "Accept-Language": "ru-RU,ru;q=0.9",
+        "Referer": "https://a.intimcity.co/bullboard",
     }
 
-    ad_urls = []
     found = []
 
-    async with httpx.AsyncClient(headers=headers, timeout=20, follow_redirects=True) as client:
-        # Собираем ссылки на объявления
+    async with httpx.AsyncClient(headers=headers, timeout=30, follow_redirects=True) as client:
         for page in range(1, pages + 1):
             try:
                 url = f"{BASE_URL}/bullboard?gender_from=m&gender_to=f&place=&page={page}"
                 resp = await client.get(url)
-                links = re.findall(r'href="(/bullboard/\d+)"', resp.text)
-                for link in links:
-                    full = BASE_URL + link
-                    if full not in ad_urls:
-                        ad_urls.append(full)
-                print(f"[INTCITY] Страница {page}: найдено {len(links)} объявлений", flush=True)
+                html = resp.text
+
+                # Берём email прямо из data-bbcontact на листинге
+                bb_emails = re.findall(r'data-bbcontact="([^"]+@[^"]+)"', html)
+                for email in bb_emails:
+                    email = email.strip().lower()
+                    if email and not any(x in email for x in ["intimcity", "example", "sentry", "test"]):
+                        found.append({"email": email, "ad_url": url})
+
+                # Берём ссылки на объявления — заходим на каждое
+                ad_links = re.findall(r'href="(/bullboard/\d+)"', html)
+                ad_links = list(set(ad_links))
+                print(f"[INTCITY] Страница {page}: {len(bb_emails)} email из листинга, {len(ad_links)} объявлений", flush=True)
+
+                for link in ad_links:
+                    try:
+                        ad_resp = await client.get(BASE_URL + link)
+                        ad_html = ad_resp.text
+                        # Email после "Контакты:"
+                        contacts = re.findall(r'[Кк]онтакты[:\s]*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', ad_html)
+                        # Любой email в тексте
+                        all_emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', ad_html)
+                        combined = list(set(contacts + all_emails))
+                        for email in combined:
+                            email = email.strip().lower()
+                            if email and not any(x in email for x in ["intimcity", "example", "sentry", "test", "google", "yandex.ru/", "mail.ru/"]):
+                                found.append({"email": email, "ad_url": BASE_URL + link})
+                    except Exception as e:
+                        print(f"[INTCITY] Ошибка объявления {link}: {e}", flush=True)
+
             except Exception as e:
                 print(f"[INTCITY] Ошибка страницы {page}: {e}", flush=True)
 
-        # Парсим email из каждого объявления
-        for ad_url in ad_urls:
-            try:
-                resp = await client.get(ad_url)
-                # Сначала ищем в атрибуте data-bbcontact (листинг)
-                bb_emails = re.findall(r'data-bbcontact="([^"]*@[^"]*)"', resp.text)
-                # Потом в тексте (страница объявления)
-                text_emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', resp.text)
-                all_emails = list(set(bb_emails + text_emails))
-                all_emails = [e for e in all_emails if not any(x in e for x in ["intimcity", "example", "test", "sentry"])]
-                for email in all_emails:
-                    found.append({"email": email, "ad_url": ad_url})
-            except Exception as e:
-                print(f"[INTCITY] Ошибка парсинга {ad_url}: {e}", flush=True)
+    # Дедупликация
+    seen = set()
+    unique = []
+    for item in found:
+        if item["email"] not in seen:
+            seen.add(item["email"])
+            unique.append(item)
 
-    print(f"[INTCITY] Всего найдено email: {len(found)}", flush=True)
-    return found
+    print(f"[INTCITY] Всего уникальных email: {len(unique)}", flush=True)
+    return unique
 
 
 def save_leads(found: list[dict], owner_email: str) -> int:
