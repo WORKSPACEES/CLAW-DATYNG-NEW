@@ -155,26 +155,7 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
                     if email and not any(x in email for x in ["intimcity", "example", "sentry", "test"]):
                         found.append({"email": email, "ad_url": url})
 
-                # Берём ссылки на объявления — заходим на каждое
-                ad_links = re.findall(r'href="(/bullboard/\d+)"', html)
-                ad_links = list(set(ad_links))
-                print(f"[INTCITY] Страница {page}: {len(bb_emails)} email из листинга, {len(ad_links)} объявлений", flush=True)
-
-                for link in ad_links:
-                    try:
-                        ad_resp = await client.get(BASE_URL + link)
-                        ad_html = ad_resp.text
-                        # Email после "Контакты:"
-                        contacts = re.findall(r'[Кк]онтакты[:\s]*([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)', ad_html)
-                        # Любой email в тексте
-                        all_emails = re.findall(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', ad_html)
-                        combined = list(set(contacts + all_emails))
-                        for email in combined:
-                            email = email.strip().lower()
-                            if email and not any(x in email for x in ["intimcity", "example", "sentry", "test", "google", "yandex.ru/", "mail.ru/"]):
-                                found.append({"email": email, "ad_url": BASE_URL + link})
-                    except Exception as e:
-                        print(f"[INTCITY] Ошибка объявления {link}: {e}", flush=True)
+                print(f"[INTCITY] Страница {page}: {len(bb_emails)} email из листинга", flush=True)
 
             except Exception as e:
                 print(f"[INTCITY] Ошибка страницы {page}: {e}", flush=True)
