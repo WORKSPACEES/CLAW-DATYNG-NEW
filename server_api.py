@@ -572,7 +572,7 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Не удалось подключиться к почте: {e}")
         account_id = str(uuid.uuid4())
-        session = get_session(authorization)
+        session = require_auth(authorization)
         public_account = {
             "id": account_id,
             "owner_email": session["email"],
@@ -1169,7 +1169,7 @@ class IntCitySendRequest(BaseModel):
 
 @app.post("/api/intcity/parse")
 async def intcity_parse(payload: IntCityParseRequest, authorization: str | None = Header(default=None)):
-    session = get_session(authorization)
+    session = require_auth(authorization)
     priv = supabase.table("accounts_private").select("cookies_raw").eq("id", payload.account_id).execute()
     if not priv.data:
         raise HTTPException(status_code=404, detail="Аккаунт не найден")
@@ -1232,14 +1232,14 @@ async def intcity_parse(payload: IntCityParseRequest, authorization: str | None 
 
 @app.get("/api/intcity/leads")
 async def intcity_leads(account_id: str, authorization: str | None = Header(default=None)):
-    session = get_session(authorization)
+    session = require_auth(authorization)
     res = supabase.table("intcity_leads").select("*").eq("owner_email", session["email"]).order("created_at", desc=True).limit(500).execute()
     return {"ok": True, "leads": res.data or []}
 
 
 @app.post("/api/intcity/send")
 async def intcity_send(payload: IntCitySendRequest, authorization: str | None = Header(default=None)):
-    session = get_session(authorization)
+    session = require_auth(authorization)
     priv = supabase.table("accounts_private").select("cookies_raw").eq("id", payload.account_id).execute()
     if not priv.data:
         raise HTTPException(status_code=404, detail="Аккаунт не найден")
