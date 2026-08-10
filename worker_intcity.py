@@ -148,14 +148,19 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
                 resp = await client.get(url)
                 html = resp.text
 
-                # Берём email прямо из data-bbcontact на листинге
-                bb_emails = re.findall(r'data-bbcontact="([^"]+@[^"]+)"', html)
-                for email in bb_emails:
-                    email = email.strip().lower()
-                    if email and not any(x in email for x in ["intimcity", "example", "sentry", "test"]):
-                        found.append({"email": email, "ad_url": url})
+                # Берём всё содержимое data-bbcontact, потом вытаскиваем email
+                bb_contacts = re.findall(r'data-bbcontact="([^"]*)"', html)
+                email_pattern = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+                page_emails = 0
+                for contact in bb_contacts:
+                    emails_in_contact = email_pattern.findall(contact)
+                    for email in emails_in_contact:
+                        email = email.strip().lower()
+                        if email and not any(x in email for x in ["intimcity", "example", "sentry", "test"]):
+                            found.append({"email": email, "ad_url": url})
+                            page_emails += 1
 
-                print(f"[INTCITY] Страница {page}: {len(bb_emails)} email из листинга", flush=True)
+                 print(f"[INTCITY] Страница {page}: {page_emails} валидных email из {len(bb_contacts)} контактов", flush=True)
 
             except Exception as e:
                 print(f"[INTCITY] Ошибка страницы {page}: {e}", flush=True)
