@@ -97,6 +97,7 @@
         <button class="navBtn" data-page="tasks">Чаты</button>
         <button class="navBtn" data-page="analytics">Отчёт</button>
         <button class="navBtn" data-page="tables">Таблица</button>
+        <button class="navBtn" data-page="contacts">Контакты</button>
         <button class="navBtn" data-page="settings">Настройки</button>
       </nav>
 
@@ -489,6 +490,30 @@
           </div>
         </div>
       </div>
+      
+      <!-- ── КОНТАКТЫ ── -->
+      <section class="page" id="contactsPage">
+        <div class="bigPanel">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+            <h2 style="margin:0;">Контакты <span id="contactsTotalCount" style="color:var(--accent3);font-size:14px;font-weight:400;"></span></h2>
+            <div style="display:flex;gap:10px;">
+              <button class="ghost" id="contactsRefreshBtn">↻ Обновить</button>
+              <button class="ghost" id="contactsExportBtn">⬇ Экспорт CSV</button>
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+            <input id="contactsSearch" placeholder="Поиск по email..." style="flex:1;min-width:200px;" />
+            <select id="contactsFilter" class="aiSelect" style="width:160px;">
+              <option value="all">Все</option>
+              <option value="unsent">Не отправлено</option>
+              <option value="sent">Отправлено</option>
+            </select>
+          </div>
+          <div id="contactsTable" style="font-family:'JetBrains Mono',monospace;font-size:12px;">
+            <div style="color:var(--text2);">Загрузка...</div>
+          </div>
+        </div>
+      </section>
 
       <!-- ── НАСТРОЙКИ ── -->
       <!-- СТАЛО: -->
