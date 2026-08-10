@@ -300,6 +300,8 @@ def send_emails(
         except Exception as e:
             errors.append(f"{lead['email']}: {e}")
             print(f"[INTCITY] ✗ Исключение → {lead['email']}: {e}", flush=True)
+            import time as _time
+            _time.sleep(2)
 
     return {"ok": True, "sent": sent, "errors": errors}
 
@@ -316,28 +318,27 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
     3. Отправляем письма на неотправленные
     """
     creds = get_account_creds(account_id)
-    sender_email = creds.get("email", "") or creds.get("mail_cookie", "").split("Mpop=")[1].split("%3A")[2].split(":")[2].strip() if "Mpop=" in creds.get("mail_cookie", "") else ""
-    sender_password = creds.get("password", "")
     mail_cookie = creds.get("mail_cookie", "") or ""
     mail_token = creds.get("mail_token", "") or ""
 
-    # Для mail.ru web API email берём из Mpop куки
-    if not sender_email and mail_cookie and "Mpop=" in mail_cookie:
+    # Email берём из Mpop куки
+    sender_email = creds.get("email", "") or ""
+    if not sender_email and "Mpop=" in mail_cookie:
         try:
             mpop = [c for c in mail_cookie.split("; ") if c.startswith("Mpop=")]
             if mpop:
-                sender_email = mpop[0].split("%3A")[2] if "%3A" in mpop[0] else mpop[0].split(":")[2]
+                val = mpop[0].split("=", 1)[1]
+                parts = val.split("%3A") if "%3A" in val else val.split(":")
+                sender_email = parts[2] if len(parts) > 2 else ""
         except Exception:
             pass
 
     if not mail_cookie or not mail_token:
-        return {"ok": False, "error": "Нет cookie/token — вставь их на карточке intCity", "summary": "Ошибка: нет cookie/token"}
+        return {"ok": False, "error": "Нет cookie/token", "summary": "Ошибка: нет cookie/token"}
 
     subject = settings.get("goal", "") or "Привет с intimcity"
     body = settings.get("persona", "") or "Привет! Увидел(а) ваше объявление на intimcity. Напишите мне!"
     pages = int(settings.get("bot_age", "3") or "3")
-    # Сначала берём из ai_settings (вставленные вручную через карточку)
-    mail_cookie = settings.get("gemini_api_keys", "") or ""
     mail_token = settings.get("stop_topics", "") or ""
     # Если нет — берём авто-полученные при подключении из cookies_raw
     if not mail_cookie or not mail_token:
