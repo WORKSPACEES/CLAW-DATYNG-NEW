@@ -1283,39 +1283,33 @@ if (isIntCityCard && intCityFields) {
     splitInput.disabled = true;
     cardEl?.classList.add("sqActive");
 
-    // Бесконечный цикл: парсим → отправляем → ждём → повторяем
-    while (runningSplits.has(account.id)) {
-      if (sqResultEl) { sqResultEl.textContent = "Парсю новые объявления..."; sqResultEl.className = "sqResult"; }
-      try {
-        const res = await fetch("/api/intcity/parse", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
-          body: JSON.stringify({ account_id: account.id, pages }),
-        });
-        const parseData = await res.json();
-        if (sqResultEl) { sqResultEl.textContent = `Спарсено: ${parseData.saved || 0} новых. Отправляю...`; }
-
-        if (!runningSplits.has(account.id)) break;
-
-        const sendRes = await fetch("/api/intcity/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
-          body: JSON.stringify({ account_id: account.id, subject, body, limit: 50 }),
-        });
-        const sendData = await sendRes.json();
-        if (sqResultEl) {
-          sqResultEl.textContent = sendData.summary || "Готово.";
-          sqResultEl.className = "sqResult good";
-        }
-      } catch (e) {
-        if (sqResultEl) { sqResultEl.textContent = `Ошибка: ${e.message}`; sqResultEl.className = "sqResult bad"; }
-      }
-
-      if (!runningSplits.has(account.id)) break;
-
-      // Пауза 5 минут перед следующим кругом
-      if (sqResultEl) { sqResultEl.textContent = "Жду 5 минут перед следующим кругом..."; sqResultEl.className = "sqResult"; }
-      await new Promise(r => setTimeout(r, 5 * 60 * 1000));
+    // Отправляем задачу в job_queue
+    if (sqResultEl) { sqResultEl.textContent = "Запускаю рассылку..."; sqResultEl.className = "sqResult"; }
+    try {
+      const res = await fetch(WORKER_API + "/api/tasks/intcity-split", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": localStorage.getItem("claw_auth_token") || "",
+        },
+        body: JSON.stringify({
+          account_id: account.id,
+          pages,
+          subject,
+          body,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка запуска");
+      if (sqResultEl) { sqResultEl.textContent = "Задача запущена — воркер работает"; sqResultEl.className = "sqResult good"; }
+    } catch (e) {
+      if (sqResultEl) { sqResultEl.textContent = `Ошибка: ${e.message}`; sqResultEl.className = "sqResult bad"; }
+      runningSplits.delete(account.id);
+      splitBtn.classList.remove("running");
+      splitBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Сплит';
+      splitBtn.disabled = false;
+      splitInput.disabled = false;
+      cardEl?.classList.remove("sqActive");
     }
 
     runningSplits.delete(account.id);
