@@ -190,7 +190,7 @@
           <button class="platformBtn" data-platform="Twinby">Twinby</button>
           <button class="platformBtn" data-platform="Vznakomstve">Взнакомстве</button>
           <button class="platformBtn" data-platform="PURE">PURE</button>
-          <button class="platformBtn" data-platform="Badanga">Badanga</button>
+          <button class="platformBtn" data-platform="intCity">intCity</button>
           <button class="platformBtn" data-platform="Lovelaz">Lovelaz</button>
           <span id="tabsDivider" style="width:1px;align-self:stretch;background:var(--border2);margin:0 4px;display:none;"></span>
           <span id="operatorTabsContainer" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
@@ -247,10 +247,60 @@
                       <input class="slotVznCode" placeholder="123456" />
                     </label>
                   </div>
+                <div class="slotIntCityFields" style="display:none;">
+                  <label>Email (mail.ru)
+                    <input class="slotIntCityEmail" placeholder="example@mail.ru" />
+                  </label>
+                  <label>Пароль приложения
+                    <input class="slotIntCityPassword" type="password" placeholder="Пароль для внешних приложений" />
+                  </label>
                 </div>
               </div>
             </template>
           </form>
+
+          <!-- intCity панель -->
+          <div id="intCityPanel" style="display:none;width:100%;padding:0 4px;">
+            <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px;margin-bottom:16px;">
+              <h3 style="margin:0 0 16px;">Парсинг объявлений</h3>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <label style="margin:0;flex-direction:row;align-items:center;gap:8px;">
+                  Страниц:
+                  <input id="intCityPages" type="number" min="1" max="20" value="3" style="width:70px;margin:0;" />
+                </label>
+                <button class="taskRunBtn" id="intCityParseBtn" style="margin:0;">🔍 Парсить</button>
+                <div class="result" id="intCityParseResult" style="margin:0;flex:1;min-width:200px;"></div>
+              </div>
+            </div>
+
+            <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+                <h3 style="margin:0;">База email <span id="intCityLeadsCount" style="color:var(--accent3);font-size:13px;"></span></h3>
+                <button class="ghost" id="intCityRefreshLeads">↻ Обновить</button>
+              </div>
+              <div id="intCityLeadsTable" style="max-height:300px;overflow-y:auto;font-size:12px;font-family:'JetBrains Mono',monospace;">
+                <div style="color:var(--text2);">Нажми "Парсить" чтобы собрать email адреса.</div>
+              </div>
+            </div>
+
+            <div style="background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:24px;">
+              <h3 style="margin:0 0 16px;">Рассылка</h3>
+              <label>Тема письма
+                <input id="intCitySubject" placeholder="Например: Привет!" style="margin-top:6px;" />
+              </label>
+              <label style="margin-top:12px;">Текст письма
+                <textarea id="intCityBody" placeholder="Текст вашего письма..." style="min-height:100px;margin-top:6px;"></textarea>
+              </label>
+              <div style="display:flex;align-items:center;gap:12px;margin-top:14px;flex-wrap:wrap;">
+                <label style="margin:0;flex-direction:row;align-items:center;gap:8px;">
+                  Лимит:
+                  <input id="intCityLimit" type="number" min="1" max="500" value="50" style="width:70px;margin:0;" />
+                </label>
+                <button class="taskRunBtn" id="intCitySendBtn" style="margin:0;">📨 Отправить рассылку</button>
+                <div class="result" id="intCitySendResult" style="margin:0;flex:1;min-width:200px;"></div>
+              </div>
+            </div>
+          </div>
 
           <!-- Сетка карточек -->
           <section class="accountsGrid" id="accountsList">
