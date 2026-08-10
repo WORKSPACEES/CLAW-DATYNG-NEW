@@ -580,9 +580,9 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
             "name": payload.account_name or payload.intcity_email,
             "profile_url": f"mailto:{payload.intcity_email}",
             "final_url": f"mailto:{payload.intcity_email}",
-            "photo_url": None,
+            "photo_url": "/intcity_logo.png",
             "session_valid": True,
-            "session_reason": "IMAP подключение успешно",
+            "session_reason": "OK",
             "images_found": 0,
             "checked_at": datetime.now().isoformat(timespec="seconds"),
         }
