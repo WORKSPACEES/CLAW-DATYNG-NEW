@@ -1723,7 +1723,7 @@ form.addEventListener("submit", async (event) => {
       slotEl,
       name:        slotEl.querySelector(".slotAccountName").value.trim(),
       url:         (isTwinby || isVzn || isIntCity) ? "" : slotEl.querySelector(".slotCheckUrl").value.trim(),
-      rawCookies:  (isTwinby || isVzn) ? "" : (slotEl.querySelector(".slotCookiesJson")?.value.trim() || ""),
+      rawCookies:  (isTwinby || isVzn) ? "" : isIntCity ? (slotEl.querySelector(".slotIntCityCookiesJson")?.value.trim() || "") : (slotEl.querySelector(".slotCookiesJson")?.value.trim() || ""),
       twinbyEmail: isTwinby ? slotEl.querySelector(".slotTwinbyEmail").value.trim() : "",
       twinbyCode:  isTwinby ? slotEl.querySelector(".slotTwinbyCode").value.trim() : "",
       vznEmail:        isVzn ? slotEl.querySelector(".slotVznEmail").value.trim() : "",
