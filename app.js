@@ -1722,14 +1722,14 @@ form.addEventListener("submit", async (event) => {
     return {
       slotEl,
       name:        slotEl.querySelector(".slotAccountName").value.trim(),
-      url:         (isTwinby || isVzn) ? "" : slotEl.querySelector(".slotCheckUrl").value.trim(),
-      rawCookies:  (isTwinby || isVzn) ? "" : slotEl.querySelector(".slotCookiesJson").value.trim(),
+      url:         (isTwinby || isVzn || isIntCity) ? "" : slotEl.querySelector(".slotCheckUrl").value.trim(),
+      rawCookies:  (isTwinby || isVzn) ? "" : (slotEl.querySelector(".slotCookiesJson")?.value.trim() || ""),
       twinbyEmail: isTwinby ? slotEl.querySelector(".slotTwinbyEmail").value.trim() : "",
       twinbyCode:  isTwinby ? slotEl.querySelector(".slotTwinbyCode").value.trim() : "",
       vznEmail:        isVzn ? slotEl.querySelector(".slotVznEmail").value.trim() : "",
       vznCode:         isVzn ? slotEl.querySelector(".slotVznCode").value.trim() : "",
-      intCityEmail:    isIntCity ? slotEl.querySelector(".slotIntCityEmail").value.trim() : "",
-      intCityPassword: isIntCity ? slotEl.querySelector(".slotIntCityPassword").value.trim() : "",
+      intCityEmail:    "",
+      intCityPassword: "",
       isTwinby,
       isIntCity,
       isVzn,
@@ -1746,6 +1746,7 @@ form.addEventListener("submit", async (event) => {
       if (!j.vznEmail) { setResult(`Анкета "${j.name || "без имени"}": введи email.`, "bad"); return; }
       if (!j.vznCode)  { setResult(`Анкета "${j.name || "без имени"}": введи код из письма.`, "bad"); return; }
     } else if (j.isIntCity) {
+      if (!j.rawCookies) { setResult(`Анкета "${j.name || "без имени"}": вставь Cookie Editor JSON.`, "bad"); return; }
     } else {
       if (!j.url.startsWith("http")) { setResult(`Анкета "${j.name || "без имени"}": URL должен начинаться с http.`, "bad"); return; }
       if (!j.rawCookies) { setResult(`Анкета "${j.name || "без имени"}": вставь Cookie-Editor JSON.`, "bad"); return; }
