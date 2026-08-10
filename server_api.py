@@ -1150,6 +1150,43 @@ def api_get_groq_error():
 def api_dismiss_groq_error():
     return {"ok": True}
 
+class IntCitySplitRequest(BaseModel):
+    account_id: str
+    pages: int = 3
+    subject: str = ""
+    body: str = ""
+
+@app.post("/api/tasks/intcity-split")
+async def intcity_split_task(payload: IntCitySplitRequest, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    # Сохраняем subject/body в ai_settings
+    existing = supabase.table("ai_settings").select("id").eq("account_id", payload.account_id).execute()
+    if existing.data:
+        supabase.table("ai_settings").update({
+            "goal": payload.subject,
+            "persona": payload.body,
+            "bot_age": str(payload.pages),
+        }).eq("account_id", payload.account_id).execute()
+    else:
+        supabase.table("ai_settings").insert({
+            "account_id": payload.account_id,
+            "goal": payload.subject,
+            "persona": payload.body,
+            "bot_age": str(payload.pages),
+        }).execute()
+    # Создаём задачу в job_queue
+    job = {
+        "account_id": payload.account_id,
+        "platform": "intCity",
+        "type": "intcity-split",
+        "status": "pending",
+        "payload": {"pages": payload.pages},
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+    }
+    supabase.table("job_queue").insert(job).execute()
+    return {"ok": True, "summary": "Задача создана"}
+
 # ── intCity: парсер и рассылка ────────────────────────────
 
 import re as _re
