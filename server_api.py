@@ -562,17 +562,9 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
 
     if platform_lower == "intcity":
-        if not payload.intcity_email or not payload.intcity_password:
-            raise HTTPException(status_code=400, detail="Введи email и пароль приложения")
-        import imaplib
-        try:
-            mail = imaplib.IMAP4_SSL("imap.mail.ru", 993)
-            mail.login(payload.intcity_email, payload.intcity_password)
-            mail.logout()
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Не удалось подключиться к почте: {e}")
+        if not payload.cookies_raw or not payload.cookies_raw.strip().startswith("["):
+            raise HTTPException(status_code=400, detail="Вставь Cookie Editor JSON")
         account_id = str(uuid.uuid4())
-        session = require_auth(authorization)
         public_account = {
             "id": account_id,
             "owner_email": session["email"],
@@ -636,8 +628,8 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
             print(f"[intCity] Ошибка авто-логина: {e}", flush=True)
 
         cookies_raw = json.dumps({
-            "email": payload.intcity_email,
-            "password": payload.intcity_password,
+            "email": "",
+            "password": "",
             "mail_cookie": mail_cookie_str,
             "mail_token": mail_token,
         })
