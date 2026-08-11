@@ -1346,6 +1346,7 @@ if (isIntCityCard && intCityFields) {
     document.getElementById("deleteAccountModalClose").onclick = () => { modal.style.display = "none"; };
     document.getElementById("deleteAccountConfirmBtn").onclick = async () => {
       modal.style.display = "none";
+      cachedAccounts = cachedAccounts.filter(a => a.id !== account.id);
       const group = cardEl.closest(".sqGroup") || cardEl.closest("[data-account-id]")?.parentElement || cardEl.parentElement?.parentElement;
       if (group) group.remove();
       else cardEl.parentElement?.remove();
