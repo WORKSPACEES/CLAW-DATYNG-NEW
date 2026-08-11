@@ -1812,6 +1812,9 @@ function initInfiniteCanvas() {
     <div id="ctxAddTimer" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
       ⏱ Добавить таймер
     </div>
+    <div id="ctxConnectAccount" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;">
+      🔗 Подключить анкету
+    </div>
   `;
   document.body.appendChild(ctxMenu);
 
@@ -1836,11 +1839,14 @@ function initInfiniteCanvas() {
     document.getElementById("addAnalyticsBtn")?.click();
   };
 
-  document.getElementById("ctxAddTimer").onclick = () => {
+  document.getElementById("ctxConnectAccount").onclick = () => {
     ctxMenu.style.display = "none";
-    window._ctxSpawnX = ctxMenuX;
-    window._ctxSpawnY = ctxMenuY;
-    addTimerCard();
+    const form = document.getElementById("connectForm");
+    const body = document.getElementById("connectBody");
+    if (!form) return;
+    form.style.display = "";
+    if (body) body.style.display = "flex";
+    form.scrollIntoView({ behavior: "smooth" });
   };
 
   document.addEventListener("click", () => { ctxMenu.style.display = "none"; });
@@ -2847,6 +2853,14 @@ form.addEventListener("submit", async (event) => {
       : `Готово: все ${succeeded} анкеты подключены.`,
     failed ? "bad" : "good"
   );
+
+  // Прячем панель подключения после успешного подключения
+  if (!failed) {
+    setTimeout(() => {
+      const form = document.getElementById("connectForm");
+      if (form) form.style.display = "none";
+    }, 2000);
+  }
 
   // оставляем неудачные слоты на экране, удачные — очищаем форму
   if (!failed) {
