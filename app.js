@@ -2093,7 +2093,7 @@ function renderTimerCard(card) {
         <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
       </div>
       <div class="sqTimerStatus" style="font:400 11px 'JetBrains Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;min-height:16px;"></div>
-      <button class="sqTimerStartBtn" style="width:100%;padding:7px;border-radius:7px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.1);color:#fbbf24;font:700 11px 'Orbitron',sans-serif;cursor:pointer;letter-spacing:0.06em;">▶ СТАРТ</button>
+      <button class="sqTimerStartBtn" style="width:100%;padding:7px;border-radius:7px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.1);color:#fbbf24;font:700 11px 'Orbitron',sans-serif;cursor:pointer;letter-spacing:0.06em;">▶ ВКЛЮЧИТЬ</button>
     </div>
   `;
 
@@ -2149,15 +2149,20 @@ function renderTimerCard(card) {
   const statusEl = group.querySelector(".sqTimerStatus");
 
   startBtn.onclick = () => {
-    if (card._running) {
+    if (card._watching) {
+      card._watching = false;
       stopTimerCard(card.id);
-      startBtn.innerHTML = "▶ СТАРТ";
+      startBtn.innerHTML = "▶ ВКЛЮЧИТЬ";
       startBtn.style.background = "rgba(251,191,36,0.1)";
       startBtn.style.borderColor = "rgba(251,191,36,0.4)";
-      startBtn.style.color = "#fbbf24";
-      statusEl.textContent = "Остановлен";
+      statusEl.textContent = "Выключен";
     } else {
-      startTimerCard(card, statusEl, startBtn);
+      card._watching = true;
+      startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
+      startBtn.style.background = "rgba(251,191,36,0.2)";
+      startBtn.style.borderColor = "rgba(251,191,36,0.8)";
+      statusEl.textContent = "Слежу за сплитом...";
+      watchTimerCard(card, statusEl, startBtn);
     }
   };
 
@@ -2178,19 +2183,12 @@ function stopTimerCard(cardId) {
   }
 }
 
-function startTimerCard(card, statusEl, startBtn) {
-  card._running = true;
-  startBtn.innerHTML = "⏹ СТОП";
-  startBtn.style.background = "rgba(251,191,36,0.2)";
-  startBtn.style.borderColor = "rgba(251,191,36,0.8)";
-  startBtn.style.color = "#fbbf24";
-
+function watchTimerCard(card, statusEl, startBtn) {
   const workMs  = (card.workMin * 60 + card.workSec) * 1000;
   const pauseMs = (card.pauseMin * 60 + card.pauseSec) * 1000;
 
-  if (workMs === 0) { statusEl.textContent = "Укажи время работы"; card._running = false; return; }
+  if (workMs === 0) { statusEl.textContent = "Укажи время работы"; card._watching = false; return; }
 
-  // Находим привязанную анкету через connections
   function getLinkedAccountId() {
     const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
     const conn = conns.find(c => c.from === card.id || c.to === card.id);
@@ -2198,35 +2196,29 @@ function startTimerCard(card, statusEl, startBtn) {
     return conn.from === card.id ? conn.to : conn.from;
   }
 
-  async function runCycle() {
-    if (!card._running) return;
-
+  // Ждём пока сплит запустится на анкете
+  function waitForSplit() {
+    if (!card._watching) return;
     const accountId = getLinkedAccountId();
     if (!accountId) {
       statusEl.textContent = "⚠ Привяжи анкету ниткой";
-      _timerIntervals[card.id] = setTimeout(runCycle, 2000);
+      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
       return;
     }
+    // Проверяем запущен ли сплит
+    if (runningSplits.has(accountId)) {
+      statusEl.textContent = "▶ Сплит обнаружен, запускаю отсчёт...";
+      startWorkCountdown(accountId);
+    } else {
+      statusEl.textContent = "Слежу... (жду запуска сплита)";
+      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+    }
+  }
 
-    // Запускаем сплит
-    statusEl.textContent = "▶ Запускаю сплит...";
-    try {
-      await fetch(WORKER_API + "/api/tasks/stop", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      });
-      await setAccountRunStatus(accountId, "running", "split", "Таймер: сплит запущен");
-      runningSplits.add(accountId);
-
-      // Запускаем визуально кнопку сплита на карточке
-      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
-      if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
-    } catch {}
-
-    // Countdown работы
+  function startWorkCountdown(accountId) {
     let remaining = workMs;
     const tick = () => {
-      if (!card._running) return;
+      if (!card._watching) return;
       remaining -= 1000;
       const m = Math.floor(remaining / 60000);
       const s = Math.floor((remaining % 60000) / 1000);
@@ -2234,15 +2226,15 @@ function startTimerCard(card, statusEl, startBtn) {
       if (remaining > 0) {
         _timerIntervals[card.id] = setTimeout(tick, 1000);
       } else {
-        stopLinkedSplit(accountId, statusEl, card, pauseMs, runCycle);
+        stopSplitAndPause(accountId);
       }
     };
     _timerIntervals[card.id] = setTimeout(tick, 1000);
   }
 
-  async function stopLinkedSplit(accountId, statusEl, card, pauseMs, runCycle) {
-    if (!card._running) return;
-    statusEl.textContent = "⏸ Останавливаю...";
+  async function stopSplitAndPause(accountId) {
+    if (!card._watching) return;
+    statusEl.textContent = "⏸ Останавливаю сплит...";
     try {
       await fetch(WORKER_API + "/api/tasks/stop", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -2254,12 +2246,19 @@ function startTimerCard(card, statusEl, startBtn) {
       if (splitBtn && splitBtn.classList.contains("running")) splitBtn.click();
     } catch {}
 
-    if (!card._running || pauseMs === 0) { statusEl.textContent = "⏸ Пауза..."; return; }
+    if (!card._watching) return;
 
-    // Countdown паузы
+    if (pauseMs === 0) {
+      // Без паузы — сразу ждём нового запуска
+      statusEl.textContent = "Слежу... (жду запуска сплита)";
+      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+      return;
+    }
+
+    // Отсчёт паузы
     let remaining = pauseMs;
     const tick = () => {
-      if (!card._running) return;
+      if (!card._watching) return;
       remaining -= 1000;
       const m = Math.floor(remaining / 60000);
       const s = Math.floor((remaining % 60000) / 1000);
@@ -2267,13 +2266,31 @@ function startTimerCard(card, statusEl, startBtn) {
       if (remaining > 0) {
         _timerIntervals[card.id] = setTimeout(tick, 1000);
       } else {
-        runCycle();
+        // Перезапускаем сплит
+        restartSplit(accountId);
       }
     };
     _timerIntervals[card.id] = setTimeout(tick, 1000);
   }
 
-  runCycle();
+  async function restartSplit(accountId) {
+    if (!card._watching) return;
+    statusEl.textContent = "▶ Перезапускаю сплит...";
+    try {
+      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+      if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
+    } catch {}
+    // Ждём пока сплит запустится и снова начинаем отсчёт
+    _timerIntervals[card.id] = setTimeout(() => {
+      if (runningSplits.has(accountId)) {
+        startWorkCountdown(accountId);
+      } else {
+        waitForSplit();
+      }
+    }, 2000);
+  }
+
+  waitForSplit();
 }
 
 function renderTimerCardsOnCanvas() {
