@@ -883,8 +883,8 @@
       <button class="modalClose" id="analyticsModalClose">✕</button>
     </div>
     <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;overscroll-behavior:contain;">
-      <label>Анкета
-        <select id="aModalAccountSelect"
+      <label style="display:none;">Анкета
+        <select id="aModalAccountSelect" class="aiSelect" style="margin-top:6px;"></select>
       </label>
       <label style="display:none;">Groq API ключи (каждый на новой строке)
         <textarea id="aModalGroqKey" 
@@ -893,7 +893,7 @@
           style="min-height:80px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);"></textarea>
       </label>
       <label style="display:none;">Модель
-        <input id="aModalGroqModel"
+        <input id="aModalGroqModel" value="llama-3.3-70b-versatile" />
       </label>
       <label style="display:none;">OpenRouter API ключ (fallback)
         <textarea id="aModalGeminiKeys" 
