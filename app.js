@@ -4314,7 +4314,7 @@ function startApp() {
         body: JSON.stringify({ name, keys }),
       });
     }
-    document.getElementById("keySlotModal").classList.remove("open");
+    document.getElementById("keySlotForm").classList.remove("open");
     loadKeySlots();
   };
   if (appStarted) return;
