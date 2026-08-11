@@ -2419,67 +2419,32 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
   };
 
   try {
-    await fetch(WORKER_API + "/api/analytics-cards", {
+    const res = await fetch(WORKER_API + "/api/analytics-cards", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        account_id:       card.accountId,
-        groq_model:       card.groqModel,
+        account_id:       null,
         bot_name:         card.botName,
         bot_age:          card.botAge,
         bot_gender:       card.botGender,
         location:         card.location,
-        persona:          card.persona,
-        goal:             card.goal,
-        stop_topics:      card.stopTopics,
+        persona:          "",
+        goal:             "",
+        stop_topics:      "",
         contacts:         card.contacts,
         contacts_trigger: card.contactsTrigger,
-        tg_chat_id:       card.tgChatId,
+        tg_chat_id:       "",
       }),
     });
-
-    const aiSettingsRes = await fetch(
-  WORKER_API + `/api/ai-settings/${encodeURIComponent(card.accountId)}`,
-  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      groq_api_key:      card.groqKey,
-      groq_api_keys:     card.groqKeys,
-      groq_model:        card.groqModel,
-      bot_name:          card.botName,
-      bot_age:           card.botAge,
-      bot_gender:        card.botGender,
-      location:          card.location,
-      persona:           card.persona,
-      goal:              card.goal,
-      stop_topics:       card.stopTopics,
-      contacts:          card.contacts,
-      contacts_trigger:  card.contactsTrigger,
-      tg_chat_id:        card.tgChatId,
-      gemini_api_keys:   card.geminiKeys,
-    }),
-  }
-);
-
-const aiSettingsData = await aiSettingsRes.json();
-
-if (!aiSettingsRes.ok || !aiSettingsData.ok) {
-  throw new Error(
-    aiSettingsData.detail ||
-    aiSettingsData.error ||
-    `Ошибка сохранения ключей: HTTP ${aiSettingsRes.status}`
-  );
-}
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
+    card.cardId = data.card.id;
   } catch (err) {
-    console.error("save analytics card error:", err);
     alert("Не удалось сохранить аналитика: " + err.message);
     return;
   }
 
   document.getElementById("analyticsModal").classList.remove("open");
   await loadAnalyticsCards();
-  const accounts = await loadAccounts();
-  renderAnalyticsGrid(accounts);
   renderAICardsOnCanvas();
 });
 
