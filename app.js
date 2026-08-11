@@ -2316,7 +2316,12 @@ function watchTimerCard(card, statusEl, startBtn) {
 }
 
 function renderTimerCardsOnCanvas() {
-  loadTimerCards();
+  try {
+    const raw = localStorage.getItem("claw_timer_cards");
+    if (raw) timerCards = JSON.parse(raw);
+  } catch {}
+  const container = document.getElementById("accountsList");
+  if (container) container.querySelectorAll(".sqTimerGroup").forEach(el => el.remove());
   timerCards.filter(c => (c.platform || "Mamba") === activePlatform).forEach(card => {
     renderTimerCard(card);
   });
