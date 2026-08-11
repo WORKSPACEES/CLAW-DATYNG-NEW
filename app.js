@@ -4286,6 +4286,16 @@ function startApp() {
     document.getElementById("keySlotForm").classList.remove("open");
   };
 
+  document.getElementById("keySlotKeys").addEventListener("paste", (e) => {
+    e.stopPropagation();
+    const text = (e.clipboardData || window.clipboardData).getData("text");
+    const el = document.getElementById("keySlotKeys");
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.value = el.value.slice(0, start) + text + el.value.slice(end);
+    e.preventDefault();
+  });
+
   document.getElementById("keySlotSaveBtn").onclick = async () => {
     const saveBtn = document.getElementById("keySlotSaveBtn");
     const slotId = saveBtn.dataset.slotId || null;
