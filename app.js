@@ -438,6 +438,10 @@ const connectToggle = document.getElementById("connectToggle");
 const connectBody   = document.getElementById("connectBody");
 const connectArrow  = document.querySelector(".connectArrow");
 
+// Скрываем панель подключения при старте — показывается только через правую кнопку мыши
+const connectForm = document.getElementById("connectForm");
+if (connectForm) connectForm.style.display = "none";
+
 if (connectToggle && connectBody) {
   connectToggle.addEventListener("click", (e) => {
     e.preventDefault();
