@@ -512,6 +512,7 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
       loadAccounts();
     }
     renderAICardsOnCanvas();
+    renderTimerCardsOnCanvas();
   });
 });
 
@@ -1726,6 +1727,9 @@ function initInfiniteCanvas() {
     <div id="ctxAddAI" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
       ✦ Добавить AI-менеджера
     </div>
+    <div id="ctxAddTimer" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
+      ⏱ Добавить таймер
+    </div>
   `;
   document.body.appendChild(ctxMenu);
 
@@ -1740,6 +1744,11 @@ function initInfiniteCanvas() {
   document.getElementById("ctxAddAI").onclick = () => {
     ctxMenu.style.display = "none";
     document.getElementById("addAnalyticsBtn")?.click();
+  };
+
+  document.getElementById("ctxAddTimer").onclick = () => {
+    ctxMenu.style.display = "none";
+    addTimerCard();
   };
 
   document.addEventListener("click", () => { ctxMenu.style.display = "none"; });
@@ -1857,7 +1866,7 @@ function initInfiniteCanvas() {
     e.stopPropagation();
     e.preventDefault();
     drawingLine = true;
-    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup");
+    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup") || dot.closest(".sqTimerGroup");
     lineFromId = group?.dataset.accountId;
     const rect = wrapper.getBoundingClientRect();
     lineEndX = e.clientX - rect.left;
@@ -1892,7 +1901,7 @@ function initInfiniteCanvas() {
     drawingLine = false;
     // Проверяем попали ли на карточку
     const target = document.elementFromPoint(e.clientX, e.clientY);
-    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup");
+    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup") || target?.closest(".sqTimerGroup");
     const toId = toGroup?.dataset.accountId;
     if (toId && toId !== lineFromId) {
       const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
@@ -2016,6 +2025,262 @@ function renderSquareGrid(accounts, statsMap) {
 
 function renderAiAccountOptions(accounts) {
   // старой формы AI больше нет — ничего не делаем
+}
+
+let timerCards = [];
+
+function saveTimerCards() {
+  try { localStorage.setItem("claw_timer_cards", JSON.stringify(timerCards)); } catch {}
+}
+
+function loadTimerCards() {
+  try {
+    const raw = localStorage.getItem("claw_timer_cards");
+    if (raw) timerCards = JSON.parse(raw);
+  } catch {}
+}
+
+function addTimerCard() {
+  const id = "timer_" + Date.now();
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+
+  const x = 400 + Math.random() * 200;
+  const y = 200 + Math.random() * 200;
+
+  const card = { id, workMin: 1, workSec: 0, pauseMin: 0, pauseSec: 30, x, y, platform: activePlatform };
+  timerCards.push(card);
+  saveTimerCards();
+  renderTimerCard(card);
+}
+
+function renderTimerCard(card) {
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+
+  const existing = container.querySelector(`.sqTimerGroup[data-timer-id="${card.id}"]`);
+  if (existing) existing.remove();
+
+  const group = document.createElement("div");
+  group.className = "sqTimerGroup";
+  group.dataset.timerId = card.id;
+  group.dataset.accountId = card.id;
+  group.style.cssText = `position:absolute;left:${card.x}px;top:${card.y}px;cursor:grab;z-index:10;`;
+
+  // Точка соединения
+  const dot = document.createElement("div");
+  dot.className = "sqConnectDot";
+  dot.title = "Потяни чтобы соединить";
+  dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);";
+  group.appendChild(dot);
+
+  group.innerHTML += `
+    <div style="background:rgba(15,18,30,0.97);border:1px solid rgba(251,191,36,0.4);border-radius:12px;padding:14px 16px;min-width:200px;position:relative;">
+      <button class="sqTimerDeleteBtn" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;opacity:0.6;">✕</button>
+      <div style="font:700 11px 'Orbitron',sans-serif;color:#fbbf24;letter-spacing:0.06em;margin-bottom:12px;">⏱ ТАЙМЕР</div>
+      <div style="font:500 11px 'Space Grotesk',sans-serif;color:rgba(255,255,255,0.5);margin-bottom:4px;">Работает</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
+        <input class="sqTimerWorkMin" type="number" min="0" max="999" value="${card.workMin}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(251,191,36,0.3);background:rgba(5,8,16,0.8);color:#fbbf24;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">мин</span>
+        <input class="sqTimerWorkSec" type="number" min="0" max="59" value="${card.workSec}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(251,191,36,0.3);background:rgba(5,8,16,0.8);color:#fbbf24;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
+      </div>
+      <div style="font:500 11px 'Space Grotesk',sans-serif;color:rgba(255,255,255,0.5);margin-bottom:4px;">Пауза перед перезапуском</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">
+        <input class="sqTimerPauseMin" type="number" min="0" max="999" value="${card.pauseMin}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(92,110,248,0.3);background:rgba(5,8,16,0.8);color:#a5b4fc;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">мин</span>
+        <input class="sqTimerPauseSec" type="number" min="0" max="59" value="${card.pauseSec}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(92,110,248,0.3);background:rgba(5,8,16,0.8);color:#a5b4fc;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
+      </div>
+      <div class="sqTimerStatus" style="font:400 11px 'JetBrains Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;min-height:16px;"></div>
+      <button class="sqTimerStartBtn" style="width:100%;padding:7px;border-radius:7px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.1);color:#fbbf24;font:700 11px 'Orbitron',sans-serif;cursor:pointer;letter-spacing:0.06em;">▶ СТАРТ</button>
+    </div>
+  `;
+
+  // Drag
+  group.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".sqConnectDot")) return;
+    if (e.target.closest("button, input")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrapper = document.getElementById("canvasWrapper");
+    const rect = wrapper.getBoundingClientRect();
+    const ox = e.clientX - rect.left - parseFloat(group.style.left);
+    const oy = e.clientY - rect.top - parseFloat(group.style.top);
+    group.style.zIndex = "100";
+    function move(e) {
+      const x = e.clientX - rect.left - ox;
+      const y = e.clientY - rect.top - oy;
+      group.style.left = x + "px";
+      group.style.top = y + "px";
+      card.x = x; card.y = y;
+      canvasPositions[card.id] = { x, y };
+      if (window._clawDrawWeb) window._clawDrawWeb();
+    }
+    function up() {
+      group.style.zIndex = "";
+      saveTimerCards();
+      saveCanvasPositions();
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  });
+
+  // Удалить
+  group.querySelector(".sqTimerDeleteBtn").onclick = (e) => {
+    e.stopPropagation();
+    stopTimerCard(card.id);
+    timerCards = timerCards.filter(c => c.id !== card.id);
+    saveTimerCards();
+    group.remove();
+    if (window._clawDrawWeb) window._clawDrawWeb();
+  };
+
+  // Сохранение значений при изменении
+  group.querySelector(".sqTimerWorkMin").addEventListener("input", (e) => { card.workMin = parseInt(e.target.value) || 0; saveTimerCards(); });
+  group.querySelector(".sqTimerWorkSec").addEventListener("input", (e) => { card.workSec = parseInt(e.target.value) || 0; saveTimerCards(); });
+  group.querySelector(".sqTimerPauseMin").addEventListener("input", (e) => { card.pauseMin = parseInt(e.target.value) || 0; saveTimerCards(); });
+  group.querySelector(".sqTimerPauseSec").addEventListener("input", (e) => { card.pauseSec = parseInt(e.target.value) || 0; saveTimerCards(); });
+
+  // Старт/стоп
+  const startBtn = group.querySelector(".sqTimerStartBtn");
+  const statusEl = group.querySelector(".sqTimerStatus");
+
+  startBtn.onclick = () => {
+    if (card._running) {
+      stopTimerCard(card.id);
+      startBtn.innerHTML = "▶ СТАРТ";
+      startBtn.style.background = "rgba(251,191,36,0.1)";
+      startBtn.style.borderColor = "rgba(251,191,36,0.4)";
+      startBtn.style.color = "#fbbf24";
+      statusEl.textContent = "Остановлен";
+    } else {
+      startTimerCard(card, statusEl, startBtn);
+    }
+  };
+
+  container.appendChild(group);
+  canvasPositions[card.id] = { x: card.x, y: card.y };
+  if (window._clawDrawWeb) window._clawDrawWeb();
+}
+
+const _timerIntervals = {};
+
+function stopTimerCard(cardId) {
+  const card = timerCards.find(c => c.id === cardId);
+  if (!card) return;
+  card._running = false;
+  if (_timerIntervals[cardId]) {
+    clearTimeout(_timerIntervals[cardId]);
+    delete _timerIntervals[cardId];
+  }
+}
+
+function startTimerCard(card, statusEl, startBtn) {
+  card._running = true;
+  startBtn.innerHTML = "⏹ СТОП";
+  startBtn.style.background = "rgba(251,191,36,0.2)";
+  startBtn.style.borderColor = "rgba(251,191,36,0.8)";
+  startBtn.style.color = "#fbbf24";
+
+  const workMs  = (card.workMin * 60 + card.workSec) * 1000;
+  const pauseMs = (card.pauseMin * 60 + card.pauseSec) * 1000;
+
+  if (workMs === 0) { statusEl.textContent = "Укажи время работы"; card._running = false; return; }
+
+  // Находим привязанную анкету через connections
+  function getLinkedAccountId() {
+    const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+    const conn = conns.find(c => c.from === card.id || c.to === card.id);
+    if (!conn) return null;
+    return conn.from === card.id ? conn.to : conn.from;
+  }
+
+  async function runCycle() {
+    if (!card._running) return;
+
+    const accountId = getLinkedAccountId();
+    if (!accountId) {
+      statusEl.textContent = "⚠ Привяжи анкету ниткой";
+      _timerIntervals[card.id] = setTimeout(runCycle, 2000);
+      return;
+    }
+
+    // Запускаем сплит
+    statusEl.textContent = "▶ Запускаю сплит...";
+    try {
+      await fetch(WORKER_API + "/api/tasks/stop", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      await setAccountRunStatus(accountId, "running", "split", "Таймер: сплит запущен");
+      runningSplits.add(accountId);
+
+      // Запускаем визуально кнопку сплита на карточке
+      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+      if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
+    } catch {}
+
+    // Countdown работы
+    let remaining = workMs;
+    const tick = () => {
+      if (!card._running) return;
+      remaining -= 1000;
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      statusEl.textContent = `▶ Работает: ${m}м ${s}с`;
+      if (remaining > 0) {
+        _timerIntervals[card.id] = setTimeout(tick, 1000);
+      } else {
+        stopLinkedSplit(accountId, statusEl, card, pauseMs, runCycle);
+      }
+    };
+    _timerIntervals[card.id] = setTimeout(tick, 1000);
+  }
+
+  async function stopLinkedSplit(accountId, statusEl, card, pauseMs, runCycle) {
+    if (!card._running) return;
+    statusEl.textContent = "⏸ Останавливаю...";
+    try {
+      await fetch(WORKER_API + "/api/tasks/stop", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ account_id: accountId }),
+      });
+      await setAccountRunStatus(accountId, "idle", "", "");
+      runningSplits.delete(accountId);
+      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+      if (splitBtn && splitBtn.classList.contains("running")) splitBtn.click();
+    } catch {}
+
+    if (!card._running || pauseMs === 0) { statusEl.textContent = "⏸ Пауза..."; return; }
+
+    // Countdown паузы
+    let remaining = pauseMs;
+    const tick = () => {
+      if (!card._running) return;
+      remaining -= 1000;
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      statusEl.textContent = `⏸ Перезапуск через: ${m}м ${s}с`;
+      if (remaining > 0) {
+        _timerIntervals[card.id] = setTimeout(tick, 1000);
+      } else {
+        runCycle();
+      }
+    };
+    _timerIntervals[card.id] = setTimeout(tick, 1000);
+  }
+
+  runCycle();
+}
+
+function renderTimerCardsOnCanvas() {
+  loadTimerCards();
+  timerCards.filter(c => (c.platform || "Mamba") === activePlatform).forEach(card => {
+    renderTimerCard(card);
+  });
 }
 
 function renderAICardsOnCanvas() {
@@ -3579,6 +3844,7 @@ function startApp() {
   ]).then(([, accounts]) => {
     renderAnalyticsGrid(accounts);
     renderAICardsOnCanvas();
+    renderTimerCardsOnCanvas();
 
     // После отображения карточек проверяем анкеты через HTTP
     refreshAccountStatuses();
