@@ -12,6 +12,8 @@
     #tablesPage.activePage { display: flex !important; flex-direction: column; }
     #homePage.activePage { display: flex !important; flex-direction: column; }
     #canvasWrapper { flex: 1; min-height: 300px; }
+    #keysPanel.open { right: 0 !important; }
+    #keysPanelToggle:hover { background: rgba(16,245,168,0.1); }
   </style>
 </head>
   <body>
@@ -976,6 +978,38 @@
 </div>
 
 <script src="./app.js"></script>
+
+<!-- Правая панель ключей -->
+<div id="keysPanelToggle" style="position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:900;background:rgba(15,18,30,0.95);border:1px solid rgba(255,255,255,0.1);border-right:none;border-radius:10px 0 0 10px;padding:12px 8px;cursor:pointer;writing-mode:vertical-rl;font:600 11px 'Orbitron',sans-serif;color:var(--accent3);letter-spacing:0.1em;backdrop-filter:blur(16px);">
+  КЛЮЧИ
+</div>
+
+<div id="keysPanel" style="position:fixed;right:-340px;top:0;height:100vh;width:320px;z-index:850;background:rgba(10,13,26,0.97);border-left:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(20px);transition:right 0.3s ease;display:flex;flex-direction:column;padding:20px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <span style="font:700 13px 'Orbitron',sans-serif;color:var(--text);letter-spacing:0.08em;">СЛОТЫ КЛЮЧЕЙ</span>
+    <button id="addKeySlotBtn" style="background:var(--accent3);border:none;border-radius:6px;color:#000;font:700 14px 'Space Grotesk',sans-serif;padding:4px 12px;cursor:pointer;">+</button>
+  </div>
+  <div id="keySlotsBody" style="flex:1;overflow-y:auto;"></div>
+</div>
+
+<!-- Модалка слота ключей -->
+<div class="modalBackdrop" id="keySlotModal">
+  <div class="modal" style="max-width:440px;">
+    <div class="modalHead">
+      <span>Слот ключей</span>
+      <button class="modalClose" id="keySlotModalClose">✕</button>
+    </div>
+    <div class="modalBody">
+      <label>Название слота
+        <input id="keySlotName" placeholder="Например: Пачка 1" style="margin-top:6px;" />
+      </label>
+      <label style="margin-top:12px;">Ключи (каждый на новой строке)
+        <textarea id="keySlotKeys" rows="8" placeholder="gsk_ключ1...&#10;gsk_ключ2...&#10;sk-or-v1-..." style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);min-height:160px;"></textarea>
+      </label>
+      <button class="taskRunBtn" id="keySlotSaveBtn" style="margin-top:14px;">Сохранить</button>
+    </div>
+  </div>
+</div>
 
   </body>
 </html>
