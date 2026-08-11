@@ -2214,15 +2214,12 @@ function renderKeySlots() {
 }
 
 async function openKeySlotModal(slot = null) {
-  const modal = document.getElementById("keySlotModal");
-  const nameInput = document.getElementById("keySlotName");
-  const keysInput = document.getElementById("keySlotKeys");
-  const saveBtn = document.getElementById("keySlotSaveBtn");
-  if (!modal) return;
-  nameInput.value = slot ? slot.name : "";
-  keysInput.value = slot ? slot.keys : "";
-  saveBtn.dataset.slotId = slot ? slot.id : "";
-  modal.classList.add("open");
+  const form = document.getElementById("keySlotForm");
+  if (!form) return;
+  document.getElementById("keySlotName").value = slot ? slot.name : "";
+  document.getElementById("keySlotKeys").value = slot ? slot.keys : "";
+  document.getElementById("keySlotSaveBtn").dataset.slotId = slot ? slot.id : "";
+  form.classList.add("open");
 }
 
 document.getElementById("keySlotSaveBtn")?.addEventListener("click", async () => {
@@ -4286,7 +4283,7 @@ function startApp() {
   document.getElementById("addKeySlotBtn").onclick = () => openKeySlotModal();
 
   document.getElementById("keySlotModalClose").onclick = () => {
-    document.getElementById("keySlotModal").classList.remove("open");
+    document.getElementById("keySlotForm").classList.remove("open");
   };
 
   document.getElementById("keySlotSaveBtn").onclick = async () => {
