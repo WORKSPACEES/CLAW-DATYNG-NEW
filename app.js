@@ -1683,6 +1683,7 @@ function initInfiniteCanvas() {
   container.addEventListener("mousedown", (e) => {
     const group = e.target.closest(".sqAIGroup");
     if (!group) return;
+    if (e.target.closest(".sqConnectDot")) return;
     e.preventDefault();
     e.stopPropagation();
     const rect = wrapper.getBoundingClientRect();
@@ -1707,7 +1708,7 @@ function initInfiniteCanvas() {
     }
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
-  }, true);
+  });
 
   window.addEventListener("resize", () => {
     drawWeb();
