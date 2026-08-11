@@ -1817,7 +1817,7 @@ function initInfiniteCanvas() {
     e.stopPropagation();
     e.preventDefault();
     drawingLine = true;
-    const group = dot.closest(".sqGroup");
+    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup");
     lineFromId = group?.dataset.accountId;
     const rect = wrapper.getBoundingClientRect();
     lineEndX = e.clientX - rect.left;
@@ -1833,7 +1833,7 @@ function initInfiniteCanvas() {
     // Перерисовываем с временной линией
     drawConnections();
     const ctx = canvas.getContext("2d");
-    const fromEl = container.querySelector(`.sqGroup[data-account-id="${lineFromId}"]`);
+    const fromEl = container.querySelector(`[data-account-id="${lineFromId}"]`);
     if (!fromEl) return;
     const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
     const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
