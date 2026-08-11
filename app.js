@@ -1927,27 +1927,7 @@ function renderSquareGrid(accounts, statsMap) {
     const node = createSquareCard(account, stats);
     group.appendChild(node);
 
-    if (analyst) {
-      let savedCollapsed = false;
-      try { savedCollapsed = localStorage.getItem(`claw_ai_collapsed_${account.id}`) === "1"; } catch {}
-      const connector = document.createElement("div");
-      connector.className = "sqConnector";
-      connector.innerHTML = `<div class="sqConnectorLine"></div>`;
-      group.appendChild(connector);
-      if (savedCollapsed) connector.style.display = "none";
-
-      const aCard = document.createElement("div");
-      aCard.className = "sqAnalyticsCard";
-      aCard.innerHTML = `
-        <div class="sqACardHead">AI</div>
-        <div class="sqACardName">${analyst.botName ? `${analyst.botName}, ${analyst.botAge}` : "Аналитик"}</div>
-        <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${analyst.contacts || "—"}</span></div>
-        <div class="sqACardRow"><span class="sqALabel">Стиль</span><span class="sqAVal">${analyst.persona || "—"}</span></div>
-        <div class="sqACardRow"><span class="sqALabel">Цель</span><span class="sqAVal">${analyst.goal || "—"}</span></div>
-      `;
-      group.appendChild(aCard);
-      if (savedCollapsed) aCard.style.display = "none";
-    }
+  
 
     group.style.position = "absolute";
     placeGroupOnCanvas(group, account.id);
@@ -2357,8 +2337,7 @@ async function openAnalyticsModal(accountId, accounts) {
 }
 
 addAnalyticsBtn?.addEventListener("click", async () => {
-  const accounts = await loadAccounts();
-  await openAnalyticsModal(null, accounts);
+  await openAnalyticsModal(null, cachedAccounts);
 });
 
 document.getElementById("analyticsModalClose")?.addEventListener("click", (e) => {
