@@ -1528,6 +1528,189 @@ async function refreshAccountStatuses() {
   }
 }
 
+// ── Infinite Canvas (pan/zoom/drag) ──────────────────────
+
+const CANVAS_STORAGE_KEY = "claw_canvas_positions";
+let canvasPositions = {}; // { [accountId]: { x, y } }
+let canvasTransform = { x: 0, y: 0, scale: 1 };
+
+function loadCanvasPositions() {
+  try {
+    const raw = localStorage.getItem(CANVAS_STORAGE_KEY);
+    if (raw) canvasPositions = JSON.parse(raw);
+  } catch {}
+}
+
+function saveCanvasPositions() {
+  try { localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(canvasPositions)); } catch {}
+}
+
+function initInfiniteCanvas() {
+  const wrapper = document.getElementById("canvasWrapper");
+  const canvas = document.getElementById("webCanvas");
+  const container = document.getElementById("accountsList");
+  if (!wrapper || !canvas || !container) return;
+
+  loadCanvasPositions();
+
+  let isPanning = false;
+  let isDragging = false;
+  let dragGroup = null;
+  let dragOffsetX = 0, dragOffsetY = 0;
+  let panStartX = 0, panStartY = 0;
+  let panOriginX = 0, panOriginY = 0;
+
+  function applyTransform() {
+    container.style.transform = `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`;
+    drawWeb();
+  }
+
+  function drawWeb() {
+    const ctx = canvas.getContext("2d");
+    const W = wrapper.offsetWidth;
+    const H = wrapper.offsetHeight;
+    canvas.width = W;
+    canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    const groups = [...container.querySelectorAll(".sqGroup")];
+    if (groups.length < 2) return;
+
+    const centers = groups.map(g => {
+      const x = parseFloat(g.style.left || 0);
+      const y = parseFloat(g.style.top || 0);
+      const w = g.offsetWidth;
+      const h = g.offsetHeight;
+      return {
+        x: (x + w / 2) * canvasTransform.scale + canvasTransform.x,
+        y: (y + h / 2) * canvasTransform.scale + canvasTransform.y,
+      };
+    });
+
+    ctx.strokeStyle = "rgba(92,110,248,0.15)";
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i < centers.length; i++) {
+      for (let j = i + 1; j < centers.length; j++) {
+        const dx = centers[i].x - centers[j].x;
+        const dy = centers[i].y - centers[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 600) continue; // не рисуем линии слишком далёких
+        const alpha = Math.max(0, 1 - dist / 600) * 0.25;
+        ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(centers[i].x, centers[i].y);
+        ctx.lineTo(centers[j].x, centers[j].y);
+        ctx.stroke();
+      }
+    }
+
+    // Точки в центрах карточек
+    ctx.fillStyle = "rgba(92,110,248,0.4)";
+    centers.forEach(c => {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Pan — зажатие пустого места
+  wrapper.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".sqGroup")) return; // клик по карточке — не пан
+    if (e.button !== 0) return;
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panOriginX = canvasTransform.x;
+    panOriginY = canvasTransform.y;
+    wrapper.style.cursor = "grabbing";
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (isPanning) {
+      canvasTransform.x = panOriginX + (e.clientX - panStartX);
+      canvasTransform.y = panOriginY + (e.clientY - panStartY);
+      applyTransform();
+    }
+    if (isDragging && dragGroup) {
+      const x = (e.clientX - wrapper.getBoundingClientRect().left - canvasTransform.x) / canvasTransform.scale - dragOffsetX;
+      const y = (e.clientY - wrapper.getBoundingClientRect().top - canvasTransform.y) / canvasTransform.scale - dragOffsetY;
+      dragGroup.style.left = x + "px";
+      dragGroup.style.top = y + "px";
+      const id = dragGroup.dataset.accountId;
+      if (id) canvasPositions[id] = { x, y };
+      drawWeb();
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (isPanning) { isPanning = false; wrapper.style.cursor = ""; }
+    if (isDragging) { isDragging = false; dragGroup = null; saveCanvasPositions(); }
+  });
+
+  // Zoom — колесо мыши
+  wrapper.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const rect = wrapper.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.max(0.2, Math.min(3, canvasTransform.scale * delta));
+    canvasTransform.x = mouseX - (mouseX - canvasTransform.x) * (newScale / canvasTransform.scale);
+    canvasTransform.y = mouseY - (mouseY - canvasTransform.y) * (newScale / canvasTransform.scale);
+    canvasTransform.scale = newScale;
+    applyTransform();
+  }, { passive: false });
+
+  // Drag карточек
+  container.addEventListener("mousedown", (e) => {
+    const group = e.target.closest(".sqGroup");
+    if (!group) return;
+    // Не начинаем drag если кликнули на кнопку/input
+    if (e.target.closest("button, input, textarea, select, a")) return;
+    e.preventDefault();
+    isDragging = true;
+    dragGroup = group;
+    const rect = wrapper.getBoundingClientRect();
+    const gx = parseFloat(group.style.left || 0);
+    const gy = parseFloat(group.style.top || 0);
+    dragOffsetX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale - gx;
+    dragOffsetY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale - gy;
+    group.style.zIndex = "100";
+    setTimeout(() => { if (dragGroup) dragGroup.style.zIndex = ""; }, 500);
+  });
+
+  window.addEventListener("resize", () => {
+    drawWeb();
+  });
+
+  applyTransform();
+}
+
+function placeGroupOnCanvas(group, accountId) {
+  const saved = canvasPositions[accountId];
+  if (saved) {
+    group.style.left = saved.x + "px";
+    group.style.top = saved.y + "px";
+  } else {
+    // Авто-расстановка по спирали
+    const idx = document.getElementById("accountsList").querySelectorAll(".sqGroup").length;
+    const angle = idx * 2.4;
+    const radius = 60 + idx * 55;
+    const cx = 400, cy = 300;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    group.style.left = x + "px";
+    group.style.top = y + "px";
+    canvasPositions[accountId] = { x, y };
+    saveCanvasPositions();
+  }
+}
+
+function drawWebIfReady() {
+  window.dispatchEvent(new Event("resize"));
+}
+
 function renderSquareGridFromCache() {
   renderSquareGrid(cachedAccounts, cachedLogs);
 }
@@ -1600,7 +1783,17 @@ function renderSquareGrid(accounts, statsMap) {
       if (savedCollapsed) aCard.style.display = "none";
     }
 
+    group.style.position = "absolute";
+    placeGroupOnCanvas(group, account.id);
     accountsList.appendChild(group);
+    setTimeout(() => {
+      const canvas = document.getElementById("webCanvas");
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        // триггер перерисовки паутины
+        document.getElementById("canvasWrapper") && drawWebIfReady();
+      }
+    }, 50);
   });
 
   return; // дальше старый код не нужен
@@ -3149,6 +3342,7 @@ function startApp() {
   loadCachedAccountsInstantly();
 
   loadOperatorTabs();
+  initInfiniteCanvas();
 
   // Загружаем всё параллельно одним махом — никто никого не ждёт
   Promise.all([
