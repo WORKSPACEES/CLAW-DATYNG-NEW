@@ -560,7 +560,8 @@
 
     <!-- Шаблон квадратной карточки на главной -->
     <template id="squareCardTemplate">
-      <article class="sqCard">
+      <article class="sqCard" style="position:relative;">
+        <div class="sqConnectDot" title="Потяни чтобы соединить" style="position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);"></div>
         <div class="sqPhoto">
           <img class="sqImg" alt="" />
           <div class="sqFallback">AI</div>
