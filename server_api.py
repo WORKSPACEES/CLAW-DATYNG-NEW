@@ -922,6 +922,7 @@ async def proxy_image(url: str, account_id: str = ""):
 class AnalyticsCardPayload(BaseModel):
     account_id: Optional[str] = None
     owner_email: Optional[str] = None
+    platform: Optional[str] = None
     bot_name: str = ""
     bot_age: str = ""
     bot_gender: str = "female"
