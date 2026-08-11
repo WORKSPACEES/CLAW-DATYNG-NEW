@@ -2236,14 +2236,18 @@ function watchTimerCard(card, statusEl, startBtn) {
     if (!card._watching) return;
     statusEl.textContent = "⏸ Останавливаю сплит...";
     try {
+      // Сначала жмём кнопку стоп — она сама остановит сплит
+      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+      if (splitBtn) {
+        splitBtn.click();
+        await new Promise(r => setTimeout(r, 500));
+      }
       await fetch(WORKER_API + "/api/tasks/stop", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ account_id: accountId }),
       });
       await setAccountRunStatus(accountId, "idle", "", "");
       runningSplits.delete(accountId);
-      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
-      if (splitBtn && splitBtn.classList.contains("running")) splitBtn.click();
     } catch {}
 
     if (!card._watching) return;
