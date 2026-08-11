@@ -1346,7 +1346,9 @@ if (isIntCityCard && intCityFields) {
     document.getElementById("deleteAccountModalClose").onclick = () => { modal.style.display = "none"; };
     document.getElementById("deleteAccountConfirmBtn").onclick = async () => {
       modal.style.display = "none";
-      node.remove(); // ← моментальное удаление карточки
+      const group = cardEl.closest(".sqGroup") || cardEl.closest("[data-account-id]")?.parentElement || cardEl.parentElement?.parentElement;
+      if (group) group.remove();
+      else cardEl.parentElement?.remove();
       try {
         runningSplits.delete(account.id);
         try {
