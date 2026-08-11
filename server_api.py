@@ -956,6 +956,7 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
         result.append({
             "id": card.get("id", ""),
             "account_id": account_id,
+            "platform": card.get("platform") or "Mamba",
             "bot_name": card.get("bot_name") or settings.get("bot_name") or "",
             "bot_age": card.get("bot_age") or settings.get("bot_age") or "",
             "bot_gender": card.get("bot_gender") or settings.get("bot_gender") or "female",
