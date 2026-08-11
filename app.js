@@ -511,8 +511,6 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
     } else {
       loadAccounts();
     }
-    renderAICardsOnCanvas();
-    renderTimerCardsOnCanvas();
   });
 });
 
@@ -1530,465 +1528,6 @@ async function refreshAccountStatuses() {
   }
 }
 
-// ── Infinite Canvas (pan/zoom/drag) ──────────────────────
-
-const CANVAS_STORAGE_KEY = "claw_canvas_positions";
-let canvasPositions = {}; // { [accountId]: { x, y } }
-let canvasTransform = { x: 0, y: 0, scale: 1 };
-
-function loadCanvasPositions() {
-  try {
-    const raw = localStorage.getItem(CANVAS_STORAGE_KEY);
-    if (raw) canvasPositions = JSON.parse(raw);
-  } catch {}
-}
-
-function saveCanvasPositions() {
-  try { localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(canvasPositions)); } catch {}
-}
-
-function initInfiniteCanvas() {
-  const wrapper = document.getElementById("canvasWrapper");
-  const canvas = document.getElementById("webCanvas");
-  const container = document.getElementById("accountsList");
-  if (!wrapper || !canvas || !container) return;
-
-  loadCanvasPositions();
-
-  let isPanning = false;
-  let isDragging = false;
-  let dragGroup = null;
-  let dragOffsetX = 0, dragOffsetY = 0;
-  let panStartX = 0, panStartY = 0;
-  let panOriginX = 0, panOriginY = 0;
-
-  function applyTransform() {
-    container.style.transform = `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`;
-    if (window._clawDrawWeb) window._clawDrawWeb(); else drawWeb();
-  }
-
-  function drawWeb() {
-    const ctx = canvas.getContext("2d");
-    const W = wrapper.offsetWidth;
-    const H = wrapper.offsetHeight;
-    canvas.width = W;
-    canvas.height = H;
-    ctx.clearRect(0, 0, W, H);
-
-    const groups = [...container.querySelectorAll(".sqGroup")];
-    if (groups.length < 2) return;
-
-    const centers = groups.map(g => {
-      const x = parseFloat(g.style.left || 0);
-      const y = parseFloat(g.style.top || 0);
-      const w = g.offsetWidth;
-      const h = g.offsetHeight;
-      return {
-        x: (x + w / 2) * canvasTransform.scale + canvasTransform.x,
-        y: (y + h / 2) * canvasTransform.scale + canvasTransform.y,
-      };
-    });
-
-    ctx.strokeStyle = "rgba(92,110,248,0.15)";
-    ctx.lineWidth = 1;
-
-    for (let i = 0; i < centers.length; i++) {
-      for (let j = i + 1; j < centers.length; j++) {
-        const dx = centers[i].x - centers[j].x;
-        const dy = centers[i].y - centers[j].y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 600) continue; // не рисуем линии слишком далёких
-        const alpha = Math.max(0, 1 - dist / 600) * 0.25;
-        ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
-        ctx.beginPath();
-        ctx.moveTo(centers[i].x, centers[i].y);
-        ctx.lineTo(centers[j].x, centers[j].y);
-        ctx.stroke();
-      }
-    }
-
-    // Точки в центрах карточек
-    ctx.fillStyle = "rgba(92,110,248,0.4)";
-    centers.forEach(c => {
-      ctx.beginPath();
-      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  }
-
-  // Pan — зажатие пустого места
-  wrapper.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".sqGroup")) return; // клик по карточке — не пан
-    if (e.button !== 0) return;
-    isPanning = true;
-    panStartX = e.clientX;
-    panStartY = e.clientY;
-    panOriginX = canvasTransform.x;
-    panOriginY = canvasTransform.y;
-    wrapper.style.cursor = "grabbing";
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (isPanning) {
-      canvasTransform.x = panOriginX + (e.clientX - panStartX);
-      canvasTransform.y = panOriginY + (e.clientY - panStartY);
-      applyTransform();
-    }
-    if (isDragging && dragGroup) {
-      const x = (e.clientX - wrapper.getBoundingClientRect().left - canvasTransform.x) / canvasTransform.scale - dragOffsetX;
-      const y = (e.clientY - wrapper.getBoundingClientRect().top - canvasTransform.y) / canvasTransform.scale - dragOffsetY;
-      dragGroup.style.left = x + "px";
-      dragGroup.style.top = y + "px";
-      const id = dragGroup.dataset.accountId || `ai_${dragGroup.dataset.cardId}`;
-      if (id) canvasPositions[id] = { x, y };
-      if (window._clawDrawWeb) window._clawDrawWeb(); else drawWeb();
-    }
-  });
-
-  window.addEventListener("mouseup", () => {
-    if (isPanning) { isPanning = false; wrapper.style.cursor = ""; }
-    if (isDragging) { isDragging = false; dragGroup = null; saveCanvasPositions(); }
-  });
-
-  // Zoom — колесо мыши
-  document.addEventListener("wheel", (e) => {
-    const homePage = document.getElementById("homePage");
-    if (!homePage || !homePage.classList.contains("activePage")) return;
-    if (!e.target.closest("#canvasWrapper")) return;
-    e.preventDefault();
-    const rect = wrapper.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const delta = e.deltaY > 0 ? 0.9 : 1.1;
-    const newScale = Math.max(0.2, Math.min(3, canvasTransform.scale * delta));
-    canvasTransform.x = mouseX - (mouseX - canvasTransform.x) * (newScale / canvasTransform.scale);
-    canvasTransform.y = mouseY - (mouseY - canvasTransform.y) * (newScale / canvasTransform.scale);
-    canvasTransform.scale = newScale;
-    applyTransform();
-  }, { passive: false });
-
-  // Drag карточек (анкеты)
-  container.addEventListener("mousedown", (e) => {
-    const group = e.target.closest(".sqGroup");
-    if (!group) return;
-    if (e.target.closest("button, input, textarea, select, a")) return;
-    e.preventDefault();
-    isDragging = true;
-    dragGroup = group;
-    const rect = wrapper.getBoundingClientRect();
-    const gx = parseFloat(group.style.left || 0);
-    const gy = parseFloat(group.style.top || 0);
-    dragOffsetX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale - gx;
-    dragOffsetY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale - gy;
-    group.style.zIndex = "100";
-    setTimeout(() => { if (dragGroup) dragGroup.style.zIndex = ""; }, 500);
-  });
-
-  // Drag AI карточек
-  container.addEventListener("mousedown", (e) => {
-    const group = e.target.closest(".sqAIGroup");
-    if (!group) return;
-    if (e.target.closest(".sqConnectDot")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const rect = wrapper.getBoundingClientRect();
-    const gx = parseFloat(group.style.left || 0);
-    const gy = parseFloat(group.style.top || 0);
-    const ox = (e.clientX - rect.left) - gx;
-    const oy = (e.clientY - rect.top) - gy;
-    group.style.zIndex = "100";
-    function move(e) {
-      const x = (e.clientX - rect.left) - ox;
-      const y = (e.clientY - rect.top) - oy;
-      group.style.left = x + "px";
-      group.style.top = y + "px";
-      const cardId = group.dataset.cardId;
-      if (cardId) canvasPositions[`ai_${cardId}`] = { x, y };
-      if (window._clawDrawWeb) window._clawDrawWeb();
-    }
-    function up() {
-      group.style.zIndex = "";
-      saveCanvasPositions();
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    }
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-  });
-
-  window.addEventListener("resize", () => {
-    drawWeb();
-  });
-
-  applyTransform();
- 
-  // Контекстное меню по правой кнопке
-  const ctxMenu = document.createElement("div");
-  ctxMenu.id = "canvasCtxMenu";
-  ctxMenu.style.cssText = "display:none;position:fixed;z-index:1000;background:rgba(15,18,30,0.97);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px 0;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.4);";
-  ctxMenu.innerHTML = `
-    <div id="ctxAddAI" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
-      ✦ Добавить AI-менеджера
-    </div>
-    <div id="ctxAddTimer" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
-      ⏱ Добавить таймер
-    </div>
-  `;
-  document.body.appendChild(ctxMenu);
-
-  wrapper.addEventListener("contextmenu", (e) => {
-    if (e.target.closest(".sqGroup")) return;
-    e.preventDefault();
-    ctxMenu.style.display = "block";
-    ctxMenu.style.left = e.clientX + "px";
-    ctxMenu.style.top = e.clientY + "px";
-  });
-
-  document.getElementById("ctxAddAI").onclick = () => {
-    ctxMenu.style.display = "none";
-    document.getElementById("addAnalyticsBtn")?.click();
-  };
-
-  document.getElementById("ctxAddTimer").onclick = () => {
-    ctxMenu.style.display = "none";
-    addTimerCard();
-  };
-
-  document.addEventListener("click", () => { ctxMenu.style.display = "none"; });
-  document.addEventListener("contextmenu", (e) => {
-    if (!e.target.closest("#canvasWrapper")) ctxMenu.style.display = "none";
-  });
-
-  // Нитки между карточками
-  const connections = JSON.parse(localStorage.getItem("claw_connections") || "[]");
-
-  function saveConnections() {
-    localStorage.setItem("claw_connections", JSON.stringify(connections));
-  }
-
-  function drawConnections() {
-    const ctx = canvas.getContext("2d");
-    const W = wrapper.offsetWidth;
-    const H = wrapper.offsetHeight;
-    canvas.width = W;
-    canvas.height = H;
-    ctx.clearRect(0, 0, W, H);
-
-    // Удаляем старые кнопки отсоединения
-    wrapper.querySelectorAll(".connDisconnectBtn").forEach(el => el.remove());
-
-    // Паутина между всеми карточками
-    const groups = [...container.querySelectorAll(".sqGroup")];
-    if (groups.length >= 2) {
-      const centers = groups.map(g => ({
-        x: (parseFloat(g.style.left||0) + g.offsetWidth/2) * canvasTransform.scale + canvasTransform.x,
-        y: (parseFloat(g.style.top||0) + g.offsetHeight/2) * canvasTransform.scale + canvasTransform.y,
-      }));
-      for (let i = 0; i < centers.length; i++) {
-        for (let j = i+1; j < centers.length; j++) {
-          const dx = centers[i].x - centers[j].x;
-          const dy = centers[i].y - centers[j].y;
-          const dist = Math.sqrt(dx*dx+dy*dy);
-          if (dist > 600) continue;
-          const alpha = Math.max(0, 1 - dist/600) * 0.15;
-          ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(centers[i].x, centers[i].y);
-          ctx.lineTo(centers[j].x, centers[j].y);
-          ctx.stroke();
-        }
-      }
-    }
-
-    // Нарисовать сохранённые соединения
-    connections.forEach((conn, idx) => {
-      const fromEl = container.querySelector(`[data-account-id="${conn.from}"]`);
-      const toEl = container.querySelector(`[data-account-id="${conn.to}"]`);
-      if (!fromEl || !toEl) return;
-      const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
-      const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
-      const tx = (parseFloat(toEl.style.left||0) + toEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
-      const ty = (parseFloat(toEl.style.top||0) + toEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
-      ctx.strokeStyle = "rgba(16,245,168,1)";
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6,4]);
-      ctx.beginPath();
-      ctx.moveTo(fx, fy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Кнопка отсоединения в середине нитки
-      const mx = (fx + tx) / 2;
-      const my = (fy + ty) / 2;
-      const btn = document.createElement("div");
-      btn.className = "connDisconnectBtn";
-      btn.textContent = "✕ отсоединить";
-      btn.style.cssText = `
-        position:absolute;
-        left:${mx}px;
-        top:${my}px;
-        transform:translate(-50%,-50%);
-        background:rgba(15,18,30,0.92);
-        border:1px solid rgba(16,245,168,0.5);
-        border-radius:6px;
-        color:#10f5a8;
-        font:500 11px 'Space Grotesk',sans-serif;
-        padding:3px 8px;
-        cursor:pointer;
-        z-index:50;
-        pointer-events:all;
-        white-space:nowrap;
-        opacity:0;
-        transition:opacity 0.15s;
-      `;
-      btn.addEventListener("mouseenter", () => btn.style.opacity = "1");
-      btn.addEventListener("mouseleave", () => btn.style.opacity = "0");
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const conn = connections[idx];
-        // Если отсоединяем AI агента от анкеты — очищаем accountId
-        const aiId = conn.from.startsWith("ai_") ? conn.from : conn.to.startsWith("ai_") ? conn.to : null;
-        if (aiId) {
-          const cardId = aiId.replace("ai_", "");
-          const aiCard = analyticsCards.find(c => c.cardId === cardId);
-          if (aiCard) {
-            aiCard.accountId = null;
-            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ account_id: null }),
-            }).catch(() => {});
-          }
-        }
-        connections.splice(idx, 1);
-        saveConnections();
-        drawConnections();
-      });
-      wrapper.appendChild(btn);
-    });
-  }
-
-  // Перезаписываем drawWeb на drawConnections
-  window._clawDrawWeb = drawConnections;
-
-  // Drag нитки
-  let drawingLine = false;
-  let lineFromId = null;
-  let lineEndX = 0, lineEndY = 0;
-
-  container.addEventListener("mousedown", (e) => {
-    const dot = e.target.closest(".sqConnectDot");
-    if (!dot) return;
-    e.stopPropagation();
-    e.preventDefault();
-    drawingLine = true;
-    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup") || dot.closest(".sqTimerGroup");
-    lineFromId = group?.dataset.accountId;
-    const rect = wrapper.getBoundingClientRect();
-    lineEndX = e.clientX - rect.left;
-    lineEndY = e.clientY - rect.top;
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!drawingLine) return;
-    const rect = wrapper.getBoundingClientRect();
-    lineEndX = e.clientX - rect.left;
-    lineEndY = e.clientY - rect.top;
-
-    // Перерисовываем с временной линией
-    drawConnections();
-    const ctx = canvas.getContext("2d");
-    const fromEl = container.querySelector(`[data-account-id="${lineFromId}"]`);
-    if (!fromEl) return;
-    const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
-    const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
-    ctx.strokeStyle = "rgba(16,245,168,0.8)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6,4]);
-    ctx.beginPath();
-    ctx.moveTo(fx, fy);
-    ctx.lineTo(lineEndX, lineEndY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  });
-
-  window.addEventListener("mouseup", (e) => {
-    if (!drawingLine) return;
-    drawingLine = false;
-    // Проверяем попали ли на карточку
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup") || target?.closest(".sqTimerGroup");
-    const toId = toGroup?.dataset.accountId;
-    if (toId && toId !== lineFromId) {
-      const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
-      if (!exists) {
-        connections.push({ from: lineFromId, to: toId });
-        saveConnections();
-
-        // Если соединяем AI агента с анкетой — обновляем accountId агента
-        const aiId = lineFromId.startsWith("ai_") ? lineFromId : toId.startsWith("ai_") ? toId : null;
-        const accountId = lineFromId.startsWith("ai_") ? toId : toId.startsWith("ai_") ? lineFromId : null;
-        if (aiId && accountId && !accountId.startsWith("ai_") && !accountId.startsWith("timer_")) {
-          const cardId = aiId.replace("ai_", "");
-          const aiCard = analyticsCards.find(c => c.cardId === cardId);
-          if (aiCard) {
-            aiCard.accountId = accountId;
-            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ account_id: accountId }),
-            }).catch(() => {});
-          }
-        }
-      }
-    }
-    drawConnections();
-  });
-
-  // Двойной клик по соединению — удалить (по карточке)
-  container.addEventListener("dblclick", (e) => {
-    const dot = e.target.closest(".sqConnectDot");
-    if (!dot) return;
-    const group = dot.closest(".sqGroup");
-    const id = group?.dataset.accountId;
-    const idx = connections.findIndex(c => c.from===id||c.to===id);
-    if (idx !== -1) {
-      connections.splice(idx, 1);
-      saveConnections();
-      drawConnections();
-    }
-  });
-
-}
-
-
-
-function placeGroupOnCanvas(group, accountId) {
-  const saved = canvasPositions[accountId];
-  if (saved) {
-    group.style.left = saved.x + "px";
-    group.style.top = saved.y + "px";
-  } else {
-    // Авто-расстановка по спирали
-    const idx = document.getElementById("accountsList").querySelectorAll(".sqGroup").length;
-    const angle = idx * 2.4;
-    const radius = 60 + idx * 55;
-    const cx = 500, cy = 100;
-    const x = cx + Math.cos(angle) * radius;
-    const y = cy + Math.sin(angle) * radius;
-    group.style.left = x + "px";
-    group.style.top = y + "px";
-    canvasPositions[accountId] = { x, y };
-    saveCanvasPositions();
-  }
-}
-
-function drawWebIfReady() {
-  window.dispatchEvent(new Event("resize"));
-}
-
 function renderSquareGridFromCache() {
   renderSquareGrid(cachedAccounts, cachedLogs);
 }
@@ -2039,19 +1578,29 @@ function renderSquareGrid(accounts, statsMap) {
     const node = createSquareCard(account, stats);
     group.appendChild(node);
 
-  
+    if (analyst) {
+      let savedCollapsed = false;
+      try { savedCollapsed = localStorage.getItem(`claw_ai_collapsed_${account.id}`) === "1"; } catch {}
+      const connector = document.createElement("div");
+      connector.className = "sqConnector";
+      connector.innerHTML = `<div class="sqConnectorLine"></div>`;
+      group.appendChild(connector);
+      if (savedCollapsed) connector.style.display = "none";
 
-    group.style.position = "absolute";
-    placeGroupOnCanvas(group, account.id);
+      const aCard = document.createElement("div");
+      aCard.className = "sqAnalyticsCard";
+      aCard.innerHTML = `
+        <div class="sqACardHead">AI</div>
+        <div class="sqACardName">${analyst.botName ? `${analyst.botName}, ${analyst.botAge}` : "Аналитик"}</div>
+        <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${analyst.contacts || "—"}</span></div>
+        <div class="sqACardRow"><span class="sqALabel">Стиль</span><span class="sqAVal">${analyst.persona || "—"}</span></div>
+        <div class="sqACardRow"><span class="sqALabel">Цель</span><span class="sqAVal">${analyst.goal || "—"}</span></div>
+      `;
+      group.appendChild(aCard);
+      if (savedCollapsed) aCard.style.display = "none";
+    }
+
     accountsList.appendChild(group);
-    setTimeout(() => {
-      const canvas = document.getElementById("webCanvas");
-      if (canvas) {
-        const ctx = canvas.getContext("2d");
-        // триггер перерисовки паутины
-        document.getElementById("canvasWrapper") && drawWebIfReady();
-      }
-    }, 50);
   });
 
   return; // дальше старый код не нужен
@@ -2059,375 +1608,6 @@ function renderSquareGrid(accounts, statsMap) {
 
 function renderAiAccountOptions(accounts) {
   // старой формы AI больше нет — ничего не делаем
-}
-
-let timerCards = [];
-
-function saveTimerCards() {
-  try { localStorage.setItem("claw_timer_cards", JSON.stringify(timerCards)); } catch {}
-}
-
-function loadTimerCards() {
-  try {
-    const raw = localStorage.getItem("claw_timer_cards");
-    if (raw) timerCards = JSON.parse(raw);
-  } catch {}
-}
-
-function addTimerCard() {
-  const id = "timer_" + Date.now();
-  const container = document.getElementById("accountsList");
-  if (!container) return;
-
-  const x = 400 + Math.random() * 200;
-  const y = 200 + Math.random() * 200;
-
-  const card = { id, workMin: 1, workSec: 0, pauseMin: 0, pauseSec: 30, x, y, platform: activePlatform };
-  timerCards.push(card);
-  saveTimerCards();
-  renderTimerCard(card);
-}
-
-function renderTimerCard(card) {
-  const container = document.getElementById("accountsList");
-  if (!container) return;
-
-  const existing = container.querySelector(`.sqTimerGroup[data-timer-id="${card.id}"]`);
-  if (existing) existing.remove();
-
-  const group = document.createElement("div");
-  group.className = "sqTimerGroup";
-  group.dataset.timerId = card.id;
-  group.dataset.accountId = card.id;
-  group.style.cssText = `position:absolute;left:${card.x}px;top:${card.y}px;cursor:grab;z-index:10;`;
-
-  // Точка соединения
-  const dot = document.createElement("div");
-  dot.className = "sqConnectDot";
-  dot.title = "Потяни чтобы соединить";
-  dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);";
-  group.appendChild(dot);
-
-  group.innerHTML += `
-    <div style="background:rgba(15,18,30,0.97);border:1px solid rgba(251,191,36,0.4);border-radius:12px;padding:14px 16px;min-width:200px;position:relative;">
-      <button class="sqTimerDeleteBtn" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;opacity:0.6;">✕</button>
-      <div style="font:700 11px 'Orbitron',sans-serif;color:#fbbf24;letter-spacing:0.06em;margin-bottom:12px;">⏱ ТАЙМЕР</div>
-      <div style="font:500 11px 'Space Grotesk',sans-serif;color:rgba(255,255,255,0.5);margin-bottom:4px;">Работает</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
-        <input class="sqTimerWorkMin" type="number" min="0" max="999" value="${card.workMin}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(251,191,36,0.3);background:rgba(5,8,16,0.8);color:#fbbf24;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
-        <span style="color:rgba(255,255,255,0.4);font-size:11px;">мин</span>
-        <input class="sqTimerWorkSec" type="number" min="0" max="59" value="${card.workSec}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(251,191,36,0.3);background:rgba(5,8,16,0.8);color:#fbbf24;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
-        <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
-      </div>
-      <div style="font:500 11px 'Space Grotesk',sans-serif;color:rgba(255,255,255,0.5);margin-bottom:4px;">Пауза перед перезапуском</div>
-      <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">
-        <input class="sqTimerPauseMin" type="number" min="0" max="999" value="${card.pauseMin}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(92,110,248,0.3);background:rgba(5,8,16,0.8);color:#a5b4fc;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
-        <span style="color:rgba(255,255,255,0.4);font-size:11px;">мин</span>
-        <input class="sqTimerPauseSec" type="number" min="0" max="59" value="${card.pauseSec}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(92,110,248,0.3);background:rgba(5,8,16,0.8);color:#a5b4fc;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
-        <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
-      </div>
-      <div class="sqTimerStatus" style="font:400 11px 'JetBrains Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;min-height:16px;"></div>
-      <button class="sqTimerStartBtn" style="width:100%;padding:7px;border-radius:7px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.1);color:#fbbf24;font:700 11px 'Orbitron',sans-serif;cursor:pointer;letter-spacing:0.06em;">▶ ВКЛЮЧИТЬ</button>
-    </div>
-  `;
-
-  // Drag
-  group.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".sqConnectDot")) return;
-    if (e.target.closest("button, input")) return;
-    e.preventDefault();
-    e.stopPropagation();
-    const wrapper = document.getElementById("canvasWrapper");
-    const rect = wrapper.getBoundingClientRect();
-    const ox = e.clientX - rect.left - parseFloat(group.style.left);
-    const oy = e.clientY - rect.top - parseFloat(group.style.top);
-    group.style.zIndex = "100";
-    function move(e) {
-      const x = e.clientX - rect.left - ox;
-      const y = e.clientY - rect.top - oy;
-      group.style.left = x + "px";
-      group.style.top = y + "px";
-      card.x = x; card.y = y;
-      canvasPositions[card.id] = { x, y };
-      if (window._clawDrawWeb) window._clawDrawWeb();
-    }
-    function up() {
-      group.style.zIndex = "";
-      saveTimerCards();
-      saveCanvasPositions();
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", up);
-    }
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", up);
-  });
-
-  // Удалить
-  group.querySelector(".sqTimerDeleteBtn").onclick = (e) => {
-    e.stopPropagation();
-    stopTimerCard(card.id);
-    timerCards = timerCards.filter(c => c.id !== card.id);
-    saveTimerCards();
-    group.remove();
-    if (window._clawDrawWeb) window._clawDrawWeb();
-  };
-
-  // Сохранение значений при изменении
-  group.querySelector(".sqTimerWorkMin").addEventListener("input", (e) => { card.workMin = parseInt(e.target.value) || 0; saveTimerCards(); });
-  group.querySelector(".sqTimerWorkSec").addEventListener("input", (e) => { card.workSec = parseInt(e.target.value) || 0; saveTimerCards(); });
-  group.querySelector(".sqTimerPauseMin").addEventListener("input", (e) => { card.pauseMin = parseInt(e.target.value) || 0; saveTimerCards(); });
-  group.querySelector(".sqTimerPauseSec").addEventListener("input", (e) => { card.pauseSec = parseInt(e.target.value) || 0; saveTimerCards(); });
-
-  // Старт/стоп
-  const startBtn = group.querySelector(".sqTimerStartBtn");
-  const statusEl = group.querySelector(".sqTimerStatus");
-
-  // Восстанавливаем состояние после перезагрузки
-  if (card.watching) {
-    card._watching = true;
-    startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
-    startBtn.style.background = "rgba(251,191,36,0.2)";
-    startBtn.style.borderColor = "rgba(251,191,36,0.8)";
-    statusEl.textContent = "Слежу за сплитом...";
-    watchTimerCard(card, statusEl, startBtn);
-  }
-
-  startBtn.onclick = () => {
-    if (card._watching) {
-      card._watching = false;
-      card.watching = false;
-      stopTimerCard(card.id);
-      saveTimerCards();
-      startBtn.innerHTML = "▶ ВКЛЮЧИТЬ";
-      startBtn.style.background = "rgba(251,191,36,0.1)";
-      startBtn.style.borderColor = "rgba(251,191,36,0.4)";
-      statusEl.textContent = "Выключен";
-    } else {
-      card._watching = true;
-      card.watching = true;
-      saveTimerCards();
-      startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
-      startBtn.style.background = "rgba(251,191,36,0.2)";
-      startBtn.style.borderColor = "rgba(251,191,36,0.8)";
-      statusEl.textContent = "Слежу за сплитом...";
-      watchTimerCard(card, statusEl, startBtn);
-    }
-  };
-
-  container.appendChild(group);
-  canvasPositions[card.id] = { x: card.x, y: card.y };
-  if (window._clawDrawWeb) window._clawDrawWeb();
-}
-
-const _timerIntervals = {};
-
-function stopTimerCard(cardId) {
-  const card = timerCards.find(c => c.id === cardId);
-  if (!card) return;
-  card._running = false;
-  if (_timerIntervals[cardId]) {
-    clearTimeout(_timerIntervals[cardId]);
-    delete _timerIntervals[cardId];
-  }
-}
-
-function watchTimerCard(card, statusEl, startBtn) {
-  const workMs  = (card.workMin * 60 + card.workSec) * 1000;
-  const pauseMs = (card.pauseMin * 60 + card.pauseSec) * 1000;
-
-  if (workMs === 0) { statusEl.textContent = "Укажи время работы"; card._watching = false; return; }
-
-  function getLinkedAccountIds() {
-    const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
-    return conns
-      .filter(c => c.from === card.id || c.to === card.id)
-      .map(c => c.from === card.id ? c.to : c.from)
-      .filter(id => !id.startsWith("ai_") && !id.startsWith("timer_"));
-  }
-
-  function waitForSplit() {
-    if (!card._watching) return;
-    const accountIds = getLinkedAccountIds();
-    if (!accountIds.length) {
-      statusEl.textContent = "⚠ Привяжи анкету ниткой";
-      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
-      return;
-    }
-    const running = accountIds.filter(id => runningSplits.has(id));
-    if (running.length) {
-      statusEl.textContent = `▶ Сплит обнаружен (${running.length}), запускаю отсчёт...`;
-      startWorkCountdown(accountIds);
-    } else {
-      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
-      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
-    }
-  }
-
-  function startWorkCountdown(accountIds) {
-    let remaining = workMs;
-    const tick = () => {
-      if (!card._watching) return;
-      remaining -= 1000;
-      const m = Math.floor(remaining / 60000);
-      const s = Math.floor((remaining % 60000) / 1000);
-      statusEl.textContent = `▶ Работает: ${m}м ${s}с (${accountIds.length} анкет)`;
-      if (remaining > 0) {
-        _timerIntervals[card.id] = setTimeout(tick, 1000);
-      } else {
-        stopSplitAndPause(accountIds);
-      }
-    };
-    _timerIntervals[card.id] = setTimeout(tick, 1000);
-  }
-
-  async function stopSplitAndPause(accountIds) {
-    if (!card._watching) return;
-    statusEl.textContent = "⏸ Останавливаю сплиты...";
-    for (const accountId of accountIds) {
-      try {
-        const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
-        if (splitBtn) {
-          splitBtn.click();
-          await new Promise(r => setTimeout(r, 300));
-        }
-        await fetch(WORKER_API + "/api/tasks/stop", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: accountId }),
-        });
-        await setAccountRunStatus(accountId, "idle", "", "");
-        runningSplits.delete(accountId);
-      } catch {}
-    }
-
-    if (!card._watching) return;
-
-    if (pauseMs === 0) {
-      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
-      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
-      return;
-    }
-
-    let remaining = pauseMs;
-    const tick = () => {
-      if (!card._watching) return;
-      remaining -= 1000;
-      const m = Math.floor(remaining / 60000);
-      const s = Math.floor((remaining % 60000) / 1000);
-      statusEl.textContent = `⏸ Перезапуск через: ${m}м ${s}с`;
-      if (remaining > 0) {
-        _timerIntervals[card.id] = setTimeout(tick, 1000);
-      } else {
-        restartSplits(accountIds);
-      }
-    };
-    _timerIntervals[card.id] = setTimeout(tick, 1000);
-  }
-
-  async function restartSplits(accountIds) {
-    if (!card._watching) return;
-    statusEl.textContent = `▶ Перезапускаю ${accountIds.length} сплитов...`;
-    for (const accountId of accountIds) {
-      try {
-        const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
-        if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
-        await new Promise(r => setTimeout(r, 300));
-      } catch {}
-    }
-    _timerIntervals[card.id] = setTimeout(() => {
-      const currentIds = getLinkedAccountIds();
-      if (currentIds.some(id => runningSplits.has(id))) {
-        startWorkCountdown(currentIds);
-      } else {
-        waitForSplit();
-      }
-    }, 2000);
-  }
-
-  waitForSplit();
-}
-
-function renderTimerCardsOnCanvas() {
-  try {
-    const raw = localStorage.getItem("claw_timer_cards");
-    if (raw) timerCards = JSON.parse(raw);
-  } catch {}
-  const container = document.getElementById("accountsList");
-  if (container) container.querySelectorAll(".sqTimerGroup").forEach(el => el.remove());
-  timerCards.filter(c => (c.platform || "Mamba") === activePlatform).forEach(card => {
-    renderTimerCard(card);
-  });
-}
-
-function renderAICardsOnCanvas() {
-  const container = document.getElementById("accountsList");
-  if (!container) return;
-
-  container.querySelectorAll(".sqAIGroup").forEach(el => el.remove());
-
-  analyticsCards.filter(card => (card.platform || "Mamba") === activePlatform).forEach(card => {
-    const group = document.createElement("div");
-    group.className = "sqAIGroup";
-    group.dataset.cardId = card.cardId;
-    group.dataset.accountId = "ai_" + card.cardId;
-    group.style.position = "absolute";
-    group.style.cursor = "grab";
-
-    const dot = document.createElement("div");
-    dot.className = "sqConnectDot";
-    dot.title = "Потяни чтобы соединить";
-    dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);";
-    group.appendChild(dot);
-
-    const aCard = document.createElement("div");
-    aCard.className = "sqAnalyticsCard";
-    aCard.style.cssText = "min-width:160px;cursor:grab;position:relative;";
-    aCard.innerHTML = `
-      <button class="sqAIDeleteBtn" data-card-id="${card.cardId}" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;line-height:1;opacity:0.6;">✕</button>
-      <button class="sqAIEditBtn" data-card-id="${card.cardId}" style="position:absolute;top:6px;right:26px;background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:12px;line-height:1;opacity:0.6;">✎</button>
-      <div class="sqACardHead">AI</div>
-      <div class="sqACardName">${card.botName ? `${card.botName}, ${card.botAge}` : "Аналитик"}</div>
-      <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${card.contacts || "—"}</span></div>
-    `;
-
-    aCard.querySelector(".sqAIDeleteBtn").onclick = async (e) => {
-      e.stopPropagation();
-      group.remove();
-      analyticsCards = analyticsCards.filter(c => c.cardId !== card.cardId);
-      try {
-        await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(card.cardId)}`, { method: "DELETE" });
-      } catch {}
-    };
-
-    aCard.querySelector(".sqAIEditBtn").onclick = (e) => {
-      e.stopPropagation();
-      document.getElementById("aModalBotName").value = card.botName || "";
-      document.getElementById("aModalBotAge").value = card.botAge || "";
-      document.getElementById("aModalBotGender").value = card.botGender || "female";
-      document.getElementById("aModalLocation").value = card.location || "";
-      document.getElementById("aModalContacts").value = card.contacts || "";
-      document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
-      document.getElementById("aModalSaveBtn").dataset.editCardId = card.cardId;
-      document.getElementById("analyticsModal").classList.add("open");
-    };
-
-    group.appendChild(aCard);
-
-
-    const saved = canvasPositions[`ai_${card.cardId}`];
-    if (saved) {
-      group.style.left = saved.x + "px";
-      group.style.top = saved.y + "px";
-    } else {
-      const x = 700 + Math.random() * 200;
-      const y = 100 + Math.random() * 200;
-      group.style.left = x + "px";
-      group.style.top = y + "px";
-      canvasPositions[`ai_${card.cardId}`] = { x, y };
-      saveCanvasPositions();
-    }
-
-    container.appendChild(group);
-  });
 }
 
 // ── Навигация ─────────────────────────────────────────────
@@ -2442,7 +1622,7 @@ function openPage(pageName) {
   const activePage = document.getElementById(`${pageName}Page`);
   if (activePage) {
     activePage.classList.add("activePage");
-    activePage.style.display = (pageName === "tables" || pageName === "home") ? "flex" : "block";
+    activePage.style.display = pageName === "tables" ? "flex" : "block";
     const appEl = document.querySelector(".app");
     if (pageName === "tables") {
       if (appEl) {
@@ -2705,7 +1885,6 @@ async function loadAnalyticsCards() {
     analyticsCards = (data.cards || []).map(c => ({
       cardId:          c.id,
       accountId:       c.account_id,
-      platform:        c.platform || "Mamba",
       botName:         c.bot_name || "",
       botAge:          c.bot_age || "",
       botGender:       c.bot_gender || "female",
@@ -2778,20 +1957,49 @@ function renderAnalyticsGrid(accounts) {
 async function openAnalyticsModal(accountId, accounts) {
   const card = accountId ? (analyticsCards.find(c => c.accountId === accountId) || {}) : {};
 
+  document.getElementById("aModalAccountSelect").value   = card.accountId || "";
+  document.getElementById("aModalGroqKey").value         = card.groqKeys || card.groqKey || "";
+  document.getElementById("aModalGroqModel").value       = card.groqModel || "llama-3.3-70b-versatile";
   document.getElementById("aModalBotName").value         = card.botName || "";
   document.getElementById("aModalBotAge").value          = card.botAge || "";
   document.getElementById("aModalBotGender").value       = card.botGender || "female";
   document.getElementById("aModalLocation").value        = card.location || "";
+  document.getElementById("aModalPersona").value         = card.persona || "";
+  document.getElementById("aModalGoal").value            = card.goal || "";
+  document.getElementById("aModalStopTopics").value      = card.stopTopics || "";
   document.getElementById("aModalContacts").value        = card.contacts || "";
   document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
+  document.getElementById("aModalTgChatId").value        = "";
 
-  // ничего
+  // Подтягиваем groq-настройки (включая tg_chat_id) отдельно, так как они хранятся в ai_settings
+  if (card.accountId) {
+    try {
+      const res = await fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(card.accountId)}`);
+      const data = await res.json();
+      if (data.settings) {
+        document.getElementById("aModalGroqModel").value = data.settings.groq_model || "llama-3.3-70b-versatile";
+        document.getElementById("aModalTgChatId").value  = data.settings.tg_chat_id || "";
+      }
+    } catch (err) {
+      console.error("load ai-settings for modal error:", err);
+    }
+  }
+
+  const sel = document.getElementById("aModalAccountSelect");
+  sel.innerHTML = '<option value="">— выбери анкету —</option>';
+  accounts.forEach(a => {
+    const o = document.createElement("option");
+    o.value = a.id; o.textContent = a.name || a.id;
+    sel.appendChild(o);
+  });
+  if (card.accountId) sel.value = card.accountId;
 
   document.getElementById("analyticsModal").classList.add("open");
 }
 
 addAnalyticsBtn?.addEventListener("click", async () => {
-  await openAnalyticsModal(null, cachedAccounts);
+  const accounts = await loadAccounts();
+  await openAnalyticsModal(null, accounts);
 });
 
 document.getElementById("analyticsModalClose")?.addEventListener("click", (e) => {
@@ -2807,58 +2015,90 @@ document.getElementById("analyticsModal")?.addEventListener("click", (e) => {
 
 document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => {
   const card = {
-    accountId:       document.getElementById("aModalSaveBtn").dataset.editCardId || "ai_" + Date.now(),
-    groqKeys:        "",
-    groqKey:         "",
-    groqModel:       "llama-3.3-70b-versatile",
+    accountId:       document.getElementById("aModalAccountSelect").value,
+    groqKeys:        document.getElementById("aModalGroqKey").value.trim(),
+    groqKey:         document.getElementById("aModalGroqKey").value.trim(),
+    groqModel:       document.getElementById("aModalGroqModel").value.trim() || "llama-3.3-70b-versatile",
     botName:         document.getElementById("aModalBotName").value.trim(),
     botAge:          document.getElementById("aModalBotAge").value.trim(),
     botGender:       document.getElementById("aModalBotGender").value,
     location:        document.getElementById("aModalLocation").value.trim(),
-    persona:         "",
-    goal:            "",
-    stopTopics:      "",
+    persona:         document.getElementById("aModalPersona").value.trim(),
+    goal:            document.getElementById("aModalGoal").value.trim(),
+    stopTopics:      document.getElementById("aModalStopTopics").value.trim(),
     contacts:        document.getElementById("aModalContacts").value.trim(),
     contactsTrigger: document.getElementById("aModalContactsTrigger").value.trim(),
-    tgChatId:        "",
-    geminiKeys:      "",
+    tgChatId:        document.getElementById("aModalTgChatId").value.trim(),
+    geminiKeys:      document.getElementById("aModalGeminiKeys").value.trim(),
   };
 
-  const editCardId = document.getElementById("aModalSaveBtn").dataset.editCardId;
+  if (!card.accountId) {
+    alert("Выбери анкету перед сохранением.");
+    return;
+  }
+
   try {
-    if (editCardId) {
-      // Обновление существующей
-      await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(editCardId)}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bot_name: card.botName, bot_age: card.botAge, bot_gender: card.botGender,
-          location: card.location, contacts: card.contacts, contacts_trigger: card.contactsTrigger,
-        }),
-      });
-    } else {
-      // Создание новой
-      const res = await fetch(WORKER_API + "/api/analytics-cards", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account_id: null, bot_name: card.botName, bot_age: card.botAge,
-          bot_gender: card.botGender, location: card.location, persona: "",
-          goal: "", stop_topics: "", contacts: card.contacts,
-          contacts_trigger: card.contactsTrigger, tg_chat_id: "",
-          platform: activePlatform,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
-    }
+    await fetch(WORKER_API + "/api/analytics-cards", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        account_id:       card.accountId,
+        groq_model:       card.groqModel,
+        bot_name:         card.botName,
+        bot_age:          card.botAge,
+        bot_gender:       card.botGender,
+        location:         card.location,
+        persona:          card.persona,
+        goal:             card.goal,
+        stop_topics:      card.stopTopics,
+        contacts:         card.contacts,
+        contacts_trigger: card.contactsTrigger,
+        tg_chat_id:       card.tgChatId,
+      }),
+    });
+
+    const aiSettingsRes = await fetch(
+  WORKER_API + `/api/ai-settings/${encodeURIComponent(card.accountId)}`,
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      groq_api_key:      card.groqKey,
+      groq_api_keys:     card.groqKeys,
+      groq_model:        card.groqModel,
+      bot_name:          card.botName,
+      bot_age:           card.botAge,
+      bot_gender:        card.botGender,
+      location:          card.location,
+      persona:           card.persona,
+      goal:              card.goal,
+      stop_topics:       card.stopTopics,
+      contacts:          card.contacts,
+      contacts_trigger:  card.contactsTrigger,
+      tg_chat_id:        card.tgChatId,
+      gemini_api_keys:   card.geminiKeys,
+    }),
+  }
+);
+
+const aiSettingsData = await aiSettingsRes.json();
+
+if (!aiSettingsRes.ok || !aiSettingsData.ok) {
+  throw new Error(
+    aiSettingsData.detail ||
+    aiSettingsData.error ||
+    `Ошибка сохранения ключей: HTTP ${aiSettingsRes.status}`
+  );
+}
   } catch (err) {
+    console.error("save analytics card error:", err);
     alert("Не удалось сохранить аналитика: " + err.message);
     return;
   }
 
   document.getElementById("analyticsModal").classList.remove("open");
   await loadAnalyticsCards();
-  renderAICardsOnCanvas();
-  delete document.getElementById("aModalSaveBtn").dataset.editCardId;
+  const accounts = await loadAccounts();
+  renderAnalyticsGrid(accounts);
 });
 
 // ── Модалки ───────────────────────────────────────────────
@@ -3909,7 +3149,6 @@ function startApp() {
   loadCachedAccountsInstantly();
 
   loadOperatorTabs();
-  initInfiniteCanvas();
 
   // Загружаем всё параллельно одним махом — никто никого не ждёт
   Promise.all([
@@ -3918,8 +3157,6 @@ function startApp() {
     loadTasksLog(),
   ]).then(([, accounts]) => {
     renderAnalyticsGrid(accounts);
-    renderAICardsOnCanvas();
-    renderTimerCardsOnCanvas();
 
     // После отображения карточек проверяем анкеты через HTTP
     refreshAccountStatuses();
