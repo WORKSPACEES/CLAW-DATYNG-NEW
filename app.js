@@ -6056,4 +6056,3 @@ document.getElementById("contactsExportBtn")?.addEventListener("click", async ()
 });
 
 window.loadProxySettings = loadProxySettings;
-}
