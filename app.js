@@ -2941,7 +2941,8 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
       });
-    } catch (err) {
+    }
+  } catch (err) {
     alert("Не удалось сохранить: " + err.message);
     return;
   }
