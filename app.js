@@ -2906,16 +2906,42 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
   const contacts        = document.getElementById("aModalContacts").value.trim();
   const contactsTrigger = document.getElementById("aModalContactsTrigger").value.trim();
 
-  if (!targetAccountId) {
-    alert("Сначала выбери анкету на странице Анкеты, затем открой AI-Менеджер");
-    return;
-  }
-
+  // targetAccountId может быть пустым — карточка создаётся без привязки к анкете
+  // привязка происходит через нитку на канвасе
   try {
-    // Обновляем analytics_cards если есть cardId
     const editCardId = saveBtn.dataset.editCardId || null;
     if (editCardId) {
+      // Обновляем существующую карточку
       await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(editCardId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
+      });
+    } else {
+      // Создаём новую карточку без привязки к анкете
+      const res = await fetch(WORKER_API + "/api/analytics-cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: targetAccountId || null,
+          bot_name: botName, bot_age: botAge, bot_gender: botGender,
+          location, persona: "", goal: "", stop_topics: "",
+          contacts, contacts_trigger: contactsTrigger, tg_chat_id: "",
+          platform: activePlatform,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
+    }
+
+    // Если есть привязанная анкета — синхронизируем в ai_settings
+    if (targetAccountId) {
+      await fetch(`/api/ai-settings/${encodeURIComponent(targetAccountId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
+      });
+    }
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
