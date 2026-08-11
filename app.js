@@ -2372,19 +2372,12 @@ function renderAnalyticsGrid(accounts) {
 async function openAnalyticsModal(accountId, accounts) {
   const card = accountId ? (analyticsCards.find(c => c.accountId === accountId) || {}) : {};
 
-  document.getElementById("aModalAccountSelect").value   = card.accountId || "";
-  document.getElementById("aModalGroqKey").value         = card.groqKeys || card.groqKey || "";
-  document.getElementById("aModalGroqModel").value       = card.groqModel || "llama-3.3-70b-versatile";
   document.getElementById("aModalBotName").value         = card.botName || "";
   document.getElementById("aModalBotAge").value          = card.botAge || "";
   document.getElementById("aModalBotGender").value       = card.botGender || "female";
   document.getElementById("aModalLocation").value        = card.location || "";
-  document.getElementById("aModalPersona").value         = card.persona || "";
-  document.getElementById("aModalGoal").value            = card.goal || "";
-  document.getElementById("aModalStopTopics").value      = card.stopTopics || "";
   document.getElementById("aModalContacts").value        = card.contacts || "";
   document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
-  document.getElementById("aModalTgChatId").value        = "";
 
   // Подтягиваем groq-настройки (включая tg_chat_id) отдельно, так как они хранятся в ai_settings
   if (card.accountId) {
@@ -2429,27 +2422,22 @@ document.getElementById("analyticsModal")?.addEventListener("click", (e) => {
 
 document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => {
   const card = {
-    accountId:       document.getElementById("aModalAccountSelect").value,
-    groqKeys:        document.getElementById("aModalGroqKey").value.trim(),
-    groqKey:         document.getElementById("aModalGroqKey").value.trim(),
-    groqModel:       document.getElementById("aModalGroqModel").value.trim() || "llama-3.3-70b-versatile",
+    accountId:       "ai_" + Date.now(),
+    groqKeys:        "",
+    groqKey:         "",
+    groqModel:       "llama-3.3-70b-versatile",
     botName:         document.getElementById("aModalBotName").value.trim(),
     botAge:          document.getElementById("aModalBotAge").value.trim(),
     botGender:       document.getElementById("aModalBotGender").value,
     location:        document.getElementById("aModalLocation").value.trim(),
-    persona:         document.getElementById("aModalPersona").value.trim(),
-    goal:            document.getElementById("aModalGoal").value.trim(),
-    stopTopics:      document.getElementById("aModalStopTopics").value.trim(),
+    persona:         "",
+    goal:            "",
+    stopTopics:      "",
     contacts:        document.getElementById("aModalContacts").value.trim(),
     contactsTrigger: document.getElementById("aModalContactsTrigger").value.trim(),
-    tgChatId:        document.getElementById("aModalTgChatId").value.trim(),
-    geminiKeys:      document.getElementById("aModalGeminiKeys").value.trim(),
+    tgChatId:        "",
+    geminiKeys:      "",
   };
-
-  if (!card.accountId) {
-    alert("Выбери анкету перед сохранением.");
-    return;
-  }
 
   try {
     await fetch(WORKER_API + "/api/analytics-cards", {
