@@ -3536,6 +3536,7 @@ function startApp() {
     loadTasksLog(),
   ]).then(([, accounts]) => {
     renderAnalyticsGrid(accounts);
+    renderAICardsOnCanvas();
 
     // После отображения карточек проверяем анкеты через HTTP
     refreshAccountStatuses();
