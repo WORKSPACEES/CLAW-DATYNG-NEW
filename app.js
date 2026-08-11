@@ -2941,29 +2941,7 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
       });
-    }
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
-      });
-    }
-
-    // ГЛАВНОЕ: сохраняем в ai_settings — именно отсюда читает воркер
-    const res = await fetch(`/api/ai-settings/${encodeURIComponent(targetAccountId)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bot_name: botName,
-        bot_age: botAge,
-        bot_gender: botGender,
-        location,
-        contacts,
-        contacts_trigger: contactsTrigger,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
-  } catch (err) {
+    } catch (err) {
     alert("Не удалось сохранить: " + err.message);
     return;
   }
