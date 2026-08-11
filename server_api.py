@@ -11,7 +11,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib import request, error
 from urllib.parse import urljoin
 
@@ -920,7 +920,7 @@ async def proxy_image(url: str, account_id: str = ""):
 # ── Analytics cards ──────────────────────────────────────
 
 class AnalyticsCardPayload(BaseModel):
-    account_id: str
+    account_id: Optional[str] = None
     bot_name: str = ""
     bot_age: str = ""
     bot_gender: str = "female"
