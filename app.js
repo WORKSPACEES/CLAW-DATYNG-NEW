@@ -1336,8 +1336,33 @@ if (isIntCityCard && intCityFields) {
     chainBtn.onclick = () => openChainModal(account.id, account.name);
   }
 
-  delBtn.onclick = async () => {
-    if (!confirm("Удалить анкету?")) return;
+  delBtn.onclick = () => {
+    const modal = document.getElementById("deleteAccountModal");
+    const nameEl = document.getElementById("deleteAccountName");
+    if (nameEl) nameEl.textContent = account.name || account.id;
+    if (modal) modal.style.display = "flex";
+
+    document.getElementById("deleteAccountCancelBtn").onclick = () => { modal.style.display = "none"; };
+    document.getElementById("deleteAccountModalClose").onclick = () => { modal.style.display = "none"; };
+    document.getElementById("deleteAccountConfirmBtn").onclick = async () => {
+      modal.style.display = "none";
+      node.remove(); // ← моментальное удаление карточки
+      try {
+        runningSplits.delete(account.id);
+        try {
+          await fetch(WORKER_API + "/api/tasks/stop", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account_id: account.id }),
+          });
+        } catch {}
+        await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
+        await loadAccounts();
+      } catch (err) {
+        alert("Не удалось удалить: " + err.message);
+      }
+    };
+  };
     try {
       // Останавливаем сплит если запущен
       runningSplits.delete(account.id);
@@ -1349,7 +1374,7 @@ if (isIntCityCard && intCityFields) {
         });
       } catch {}
       await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
-      await loadAccounts();
+      await loadAccounts();а node.querySelector(".deleteBtn").onclick  = async () => {
     } catch (err) {
       alert("Не удалось удалить: " + err.message);
     }
@@ -1380,12 +1405,13 @@ function createAccountCard(account) {
   node.querySelector(".checked").textContent= `Сохранено: ${formatDate(account.checked_at)}`;
   node.querySelector(".cookies").textContent= `Cookies: ${account.cookies_count || 0}`;
   node.querySelector(".openBtn").onclick    = () => window.open(account.final_url || account.profile_url, "_blank");
-  node.querySelector(".deleteBtn").onclick  = async () => {
+  node.querySelector(".deleteBtn").onclick  = async (e) => {
+    const card = e.target.closest(".accountCard, .card, li") || e.target.parentElement;
+    if (card) card.remove();
     try {
       const res  = await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "Ошибка удаления");
-      await loadAccounts();
     } catch (err) { alert("Не удалось удалить: " + err.message); }
   };
   return node;
@@ -1523,14 +1549,6 @@ function renderSquareGridFromCache() {
 function renderSquareGrid(accounts, statsMap) {
   if (!accountsList) return;
 
-  accountsList.querySelectorAll(".sqGroup").forEach(el => el.remove());
-
-  const empty = document.getElementById("gridEmpty");
-  const intCityPanel = document.getElementById("intCityPanel");
-
-  if (intCityPanel) intCityPanel.style.display = "none";
-  if (accountsList) accountsList.style.display = "";
-
   const filtered = accounts.filter(a => {
     if ((a.platform || "").toLowerCase() !== activePlatform.toLowerCase()) return false;
     if (activeTabId) {
@@ -1541,20 +1559,35 @@ function renderSquareGrid(accounts, statsMap) {
     return true;
   });
 
+  const empty = document.getElementById("gridEmpty");
+  const intCityPanel = document.getElementById("intCityPanel");
+  if (intCityPanel) intCityPanel.style.display = "none";
+  if (accountsList) accountsList.style.display = "";
+
   if (!filtered.length) {
     if (empty) empty.style.display = "none";
+    accountsList.querySelectorAll(".sqGroup").forEach(el => el.remove());
     return;
   }
-
   if (empty) empty.style.display = "none";
 
-  filtered.forEach(account => {
-    const stats = statsMap[account.id] || { liked: 0, replied: 0, contacts: 0 };
-    const analyst = analyticsCards.find(c => c.accountId === account.id);
+  // Удаляем карточки которых больше нет
+  const filteredIds = new Set(filtered.map(a => a.id));
+  accountsList.querySelectorAll(".sqGroup").forEach(el => {
+    const id = el.dataset.accountId;
+    if (!filteredIds.has(id)) el.remove();
+  });
 
-    // группа: карточка [+ коннектор + аналитик]
+  // Добавляем/обновляем только изменившиеся
+  filtered.forEach((account, idx) => {
+    const stats = statsMap[account.id] || { liked: 0, replied: 0, contacts: 0 };
+    const existing = accountsList.querySelector(`.sqGroup[data-account-id="${account.id}"]`);
+    if (existing) return; // уже есть — не трогаем
+
+    const analyst = analyticsCards.find(c => c.accountId === account.id);
     const group = document.createElement("div");
     group.className = "sqGroup";
+    group.dataset.accountId = account.id;
 
     const node = createSquareCard(account, stats);
     group.appendChild(node);
@@ -1583,7 +1616,15 @@ function renderSquareGrid(accounts, statsMap) {
 
     accountsList.appendChild(group);
   });
-}
+
+  return; // дальше старый код не нужен
+
+  const empty = document.getElementById("gridEmpty");
+  const intCityPanel = document.getElementById("intCityPanel");
+
+  if (intCityPanel) intCityPanel.style.display = "none";
+  if (accountsList) accountsList.style.display = "";
+
 
 function renderAiAccountOptions(accounts) {
   // старой формы AI больше нет — ничего не делаем
