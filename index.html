@@ -216,7 +216,7 @@
           <span id="operatorTabsContainer" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
           <button class="platformBtn" id="addTabBtn" title="Добавить вкладку" style="width:36px;padding:7px 0;text-align:center;">+</button>
         </div>
-        <section class="homeLayout">
+        <section class="homeLayout" style="display:flex;flex-direction:column;flex:1;min-height:0;">
 
           <!-- Форма подключения -->
           <form class="panel connectPanel" id="connectForm">
@@ -277,14 +277,17 @@
             </template>
           </form>
 
-          <!-- Сетка карточек -->
-          <section class="accountsGrid" id="accountsList">
-            <div class="gridEmpty" id="gridEmpty">
-              <div class="gridEmptyIcon"></div>
-              <b>Анкет пока нет</b>
-              <span>Подключи первую — она появится здесь карточкой</span>
+          <!-- Infinite canvas -->
+          <div id="canvasWrapper" style="position:relative;flex:1;overflow:hidden;background:var(--bg);min-height:0;">
+            <canvas id="webCanvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
+            <div id="accountsList" style="position:absolute;top:0;left:0;width:0;height:0;transform-origin:0 0;">
+              <div class="gridEmpty" id="gridEmpty" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
+                <div class="gridEmptyIcon"></div>
+                <b>Анкет пока нет</b>
+                <span>Подключи первую — она появится здесь карточкой</span>
+              </div>
             </div>
-          </section>
+          </div>
 
         </section>
       </section>
