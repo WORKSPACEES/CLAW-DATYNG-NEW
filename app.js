@@ -2167,6 +2167,117 @@ function initInfiniteCanvas() {
   applyTransform();
 }
 
+// ── Правая панель ключей ──────────────────────────────────
+
+let keySlots = [];
+
+async function loadKeySlots() {
+  try {
+    const res = await fetch(WORKER_API + "/api/key-slots");
+    const data = await res.json();
+    keySlots = data.slots || [];
+    renderKeySlots();
+  } catch(e) { console.error("loadKeySlots error:", e); }
+}
+
+function renderKeySlots() {
+  const list = document.getElementById("keySlotsBody");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!keySlots.length) {
+    list.innerHTML = `<div style="color:var(--text2);font:400 12px 'Space Grotesk',sans-serif;padding:12px 0;text-align:center;">Нет слотов — нажми +</div>`;
+    return;
+  }
+  keySlots.forEach(slot => {
+    const keyCount = (slot.keys || "").split("\n").filter(k => k.trim()).length;
+    const isAssigned = !!slot.account_id;
+    const el = document.createElement("div");
+    el.style.cssText = "border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.02);";
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="font:600 12px 'Space Grotesk',sans-serif;color:var(--text);">${slot.name}</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <span style="font:400 11px 'Space Grotesk',sans-serif;color:${isAssigned ? "var(--green,#10f5a8)" : "var(--text2)"};">${isAssigned ? "✓ привязан" : "свободен"}</span>
+          <button class="slotEditBtn" data-id="${slot.id}" style="background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:13px;">✎</button>
+          <button class="slotDeleteBtn" data-id="${slot.id}" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:13px;">✕</button>
+        </div>
+      </div>
+      <div style="font:400 11px 'Space Grotesk',sans-serif;color:var(--text2);">${keyCount} ключ${keyCount === 1 ? "" : keyCount < 5 ? "а" : "ей"}</div>
+    `;
+    el.querySelector(".slotEditBtn").onclick = () => openKeySlotModal(slot);
+    el.querySelector(".slotDeleteBtn").onclick = async () => {
+      await fetch(WORKER_API + `/api/key-slots/${slot.id}`, { method: "DELETE" });
+      loadKeySlots();
+    };
+    list.appendChild(el);
+  });
+}
+
+async function openKeySlotModal(slot = null) {
+  const modal = document.getElementById("keySlotModal");
+  const nameInput = document.getElementById("keySlotName");
+  const keysInput = document.getElementById("keySlotKeys");
+  const saveBtn = document.getElementById("keySlotSaveBtn");
+  if (!modal) return;
+  nameInput.value = slot ? slot.name : "";
+  keysInput.value = slot ? slot.keys : "";
+  saveBtn.dataset.slotId = slot ? slot.id : "";
+  modal.classList.add("open");
+}
+
+document.getElementById("keySlotSaveBtn")?.addEventListener("click", async () => {
+  const saveBtn = document.getElementById("keySlotSaveBtn");
+  const slotId = saveBtn.dataset.slotId || null;
+  const name = document.getElementById("keySlotName").value.trim() || "Слот";
+  const keys = document.getElementById("keySlotKeys").value.trim();
+  if (slotId) {
+    await fetch(WORKER_API + `/api/key-slots/${slotId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, keys }),
+    });
+  } else {
+    await fetch(WORKER_API + "/api/key-slots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, keys }),
+    });
+  }
+  document.getElementById("keySlotModal").classList.remove("open");
+  loadKeySlots();
+});
+
+document.getElementById("keySlotModalClose")?.addEventListener("click", () => {
+  document.getElementById("keySlotModal").classList.remove("open");
+});
+
+document.getElementById("addKeySlotBtn")?.addEventListener("click", () => openKeySlotModal());
+
+document.getElementById("keysPanelToggle")?.addEventListener("click", () => {
+  const panel = document.getElementById("keysPanel");
+  if (!panel) return;
+  const isOpen = panel.classList.contains("open");
+  panel.classList.toggle("open", !isOpen);
+  if (!isOpen) loadKeySlots();
+});
+
+// Автоприменение ключей при подключении анкеты
+async function autoAssignKeysToAccount(accountId) {
+  const freeSlot = keySlots.find(s => !s.account_id);
+  if (!freeSlot) return;
+  const keys = (freeSlot.keys || "").split("\n").filter(k => k.trim());
+  if (!keys.length) return;
+  // Применяем ключи к ai_settings
+  await fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(accountId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groq_api_keys: keys.join("\n") }),
+  });
+  // Привязываем слот к анкете
+  await fetch(WORKER_API + `/api/key-slots/${freeSlot.id}/assign`, {
+    method: "POST",
+  });
+
 function placeGroupOnCanvas(group, accountId) {
   const saved = canvasPositions[accountId];
   if (saved) {
