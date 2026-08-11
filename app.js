@@ -1637,7 +1637,7 @@ function initInfiniteCanvas() {
       const y = (e.clientY - wrapper.getBoundingClientRect().top - canvasTransform.y) / canvasTransform.scale - dragOffsetY;
       dragGroup.style.left = x + "px";
       dragGroup.style.top = y + "px";
-      const id = dragGroup.dataset.accountId;
+      const id = dragGroup.dataset.accountId || `ai_${dragGroup.dataset.cardId}`;
       if (id) canvasPositions[id] = { x, y };
       drawWeb();
     }
@@ -1664,20 +1664,13 @@ function initInfiniteCanvas() {
 
   // Drag карточек
   container.addEventListener("mousedown", (e) => {
-    const group = e.target.closest(".sqGroup");
+    const group = e.target.closest(".sqGroup, .sqAIGroup");
     if (!group) return;
     // Не начинаем drag если кликнули на кнопку/input
     if (e.target.closest("button, input, textarea, select, a")) return;
     e.preventDefault();
     isDragging = true;
     dragGroup = group;
-    const rect = wrapper.getBoundingClientRect();
-    const gx = parseFloat(group.style.left || 0);
-    const gy = parseFloat(group.style.top || 0);
-    dragOffsetX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale - gx;
-    dragOffsetY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale - gy;
-    group.style.zIndex = "100";
-    setTimeout(() => { if (dragGroup) dragGroup.style.zIndex = ""; }, 500);
   });
 
   window.addEventListener("resize", () => {
@@ -1947,6 +1940,53 @@ function renderSquareGrid(accounts, statsMap) {
 
 function renderAiAccountOptions(accounts) {
   // старой формы AI больше нет — ничего не делаем
+}
+
+function renderAICardsOnCanvas() {
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+
+  // Удаляем старые AI карточки
+  container.querySelectorAll(".sqAIGroup").forEach(el => el.remove());
+
+  analyticsCards.forEach(card => {
+    const existing = container.querySelector(`.sqAIGroup[data-card-id="${card.cardId}"]`);
+    if (existing) return;
+
+    const group = document.createElement("div");
+    group.className = "sqAIGroup";
+    group.dataset.cardId = card.cardId;
+    group.style.position = "absolute";
+    group.style.cursor = "grab";
+
+    const aCard = document.createElement("div");
+    aCard.className = "sqAnalyticsCard";
+    aCard.style.cssText = "min-width:160px;cursor:grab;";
+    aCard.innerHTML = `
+      <div class="sqACardHead">AI</div>
+      <div class="sqACardName">${card.botName ? `${card.botName}, ${card.botAge}` : "Аналитик"}</div>
+      <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${card.contacts || "—"}</span></div>
+      <div class="sqACardRow"><span class="sqALabel">Стиль</span><span class="sqAVal">${card.persona || "—"}</span></div>
+      <div class="sqACardRow"><span class="sqALabel">Цель</span><span class="sqAVal">${card.goal || "—"}</span></div>
+    `;
+    group.appendChild(aCard);
+
+    // Позиция
+    const saved = canvasPositions[`ai_${card.cardId}`];
+    if (saved) {
+      group.style.left = saved.x + "px";
+      group.style.top = saved.y + "px";
+    } else {
+      const x = 700 + Math.random() * 200;
+      const y = 100 + Math.random() * 200;
+      group.style.left = x + "px";
+      group.style.top = y + "px";
+      canvasPositions[`ai_${card.cardId}`] = { x, y };
+      saveCanvasPositions();
+    }
+
+    container.appendChild(group);
+  });
 }
 
 // ── Навигация ─────────────────────────────────────────────
@@ -2437,6 +2477,7 @@ if (!aiSettingsRes.ok || !aiSettingsData.ok) {
   await loadAnalyticsCards();
   const accounts = await loadAccounts();
   renderAnalyticsGrid(accounts);
+  renderAICardsOnCanvas();
 });
 
 // ── Модалки ───────────────────────────────────────────────
