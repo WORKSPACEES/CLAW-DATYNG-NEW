@@ -2253,13 +2253,17 @@ document.getElementById("keySlotModalClose")?.addEventListener("click", () => {
 
 document.getElementById("addKeySlotBtn")?.addEventListener("click", () => openKeySlotModal());
 
-document.getElementById("keysPanelToggle")?.addEventListener("click", () => {
-  const panel = document.getElementById("keysPanel");
-  if (!panel) return;
-  const isOpen = panel.classList.contains("open");
-  panel.classList.toggle("open", !isOpen);
-  if (!isOpen) loadKeySlots();
-});
+// Вешаем через onclick напрямую — надёжнее при раннем выполнении
+const _keysPanelToggleEl = document.getElementById("keysPanelToggle");
+if (_keysPanelToggleEl) {
+  _keysPanelToggleEl.onclick = () => {
+    const panel = document.getElementById("keysPanel");
+    if (!panel) return;
+    const isOpen = panel.classList.contains("open");
+    panel.classList.toggle("open", !isOpen);
+    if (!isOpen) loadKeySlots();
+  };
+}
 
 // Автоприменение ключей при подключении анкеты
 async function autoAssignKeysToAccount(accountId) {
