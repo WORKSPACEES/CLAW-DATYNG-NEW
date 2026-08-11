@@ -10,6 +10,8 @@
     .page { display: none; }
     .page.activePage { display: block; }
     #tablesPage.activePage { display: flex !important; flex-direction: column; }
+    #homePage.activePage { display: flex !important; flex-direction: column; height: 100%; }
+    .app { height: 100vh; overflow: hidden; }
   </style>
 </head>
   <body>
@@ -204,7 +206,7 @@
     <main class="app" id="mainApp" style="display:none;">
 
       <!-- ── ГЛАВНАЯ ── -->
-      <section class="page activePage" id="homePage">
+      <section class="page activePage" id="homePage" style="display:flex;flex-direction:column;height:100%;">
         <div class="platformBtns" id="platformBtnsRow">
           <button class="platformBtn active" data-platform="Mamba">Mamba</button>
           <button class="platformBtn" data-platform="Twinby">Twinby</button>
