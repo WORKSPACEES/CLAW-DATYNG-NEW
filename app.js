@@ -2313,6 +2313,7 @@ function watchTimerCard(card, statusEl, startBtn) {
   }
 
   waitForSplit();
+}
 
 function renderTimerCardsOnCanvas() {
   loadTimerCards();
