@@ -1722,6 +1722,28 @@ function initInfiniteCanvas() {
 
   applyTransform();
  
+  // Анимационный цикл для бегущих частиц
+  let _animFrameId = null;
+  function _startAnimLoop() {
+    if (_animFrameId) return;
+    function loop() {
+      const hasActive = connections.some(conn => {
+        const fromId = (!conn.from.startsWith("ai_") && !conn.from.startsWith("timer_")) ? conn.from : null;
+        const toId   = (!conn.to.startsWith("ai_")   && !conn.to.startsWith("timer_"))   ? conn.to   : null;
+        return (fromId && runningSplits.has(fromId)) || (toId && runningSplits.has(toId));
+      });
+      if (hasActive) {
+        drawConnections();
+        _animFrameId = requestAnimationFrame(loop);
+      } else {
+        _animFrameId = null;
+        drawConnections();
+      }
+    }
+    _animFrameId = requestAnimationFrame(loop);
+  }
+  window._clawStartAnim = _startAnimLoop;
+
   // Контекстное меню по правой кнопке
   const ctxMenu = document.createElement("div");
   ctxMenu.id = "canvasCtxMenu";
@@ -1736,21 +1758,31 @@ function initInfiniteCanvas() {
   `;
   document.body.appendChild(ctxMenu);
 
+  let ctxMenuX = 0, ctxMenuY = 0;
+
   wrapper.addEventListener("contextmenu", (e) => {
     if (e.target.closest(".sqGroup")) return;
     e.preventDefault();
     ctxMenu.style.display = "block";
     ctxMenu.style.left = e.clientX + "px";
     ctxMenu.style.top = e.clientY + "px";
+    // Запоминаем координаты в canvas-пространстве
+    const rect = wrapper.getBoundingClientRect();
+    ctxMenuX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale;
+    ctxMenuY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale;
   });
 
   document.getElementById("ctxAddAI").onclick = () => {
     ctxMenu.style.display = "none";
+    window._ctxSpawnX = ctxMenuX;
+    window._ctxSpawnY = ctxMenuY;
     document.getElementById("addAnalyticsBtn")?.click();
   };
 
   document.getElementById("ctxAddTimer").onclick = () => {
     ctxMenu.style.display = "none";
+    window._ctxSpawnX = ctxMenuX;
+    window._ctxSpawnY = ctxMenuY;
     addTimerCard();
   };
 
@@ -1774,10 +1806,9 @@ function initInfiniteCanvas() {
     canvas.height = H;
     ctx.clearRect(0, 0, W, H);
 
-    // Удаляем старые кнопки отсоединения
     wrapper.querySelectorAll(".connDisconnectBtn").forEach(el => el.remove());
 
-    // Паутина между всеми карточками
+    // Паутина между карточками
     const groups = [...container.querySelectorAll(".sqGroup")];
     if (groups.length >= 2) {
       const centers = groups.map(g => ({
@@ -1790,7 +1821,7 @@ function initInfiniteCanvas() {
           const dy = centers[i].y - centers[j].y;
           const dist = Math.sqrt(dx*dx+dy*dy);
           if (dist > 600) continue;
-          const alpha = Math.max(0, 1 - dist/600) * 0.15;
+          const alpha = Math.max(0, 1 - dist/600) * 0.08;
           ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
           ctx.lineWidth = 1;
           ctx.beginPath();
@@ -1801,54 +1832,168 @@ function initInfiniteCanvas() {
       }
     }
 
-    // Нарисовать сохранённые соединения
+    // Нитки соединений
+    const now = Date.now();
+
     connections.forEach((conn, idx) => {
       const fromEl = container.querySelector(`[data-account-id="${conn.from}"]`);
       const toEl = container.querySelector(`[data-account-id="${conn.to}"]`);
       if (!fromEl || !toEl) return;
+
       const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
       const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
       const tx = (parseFloat(toEl.style.left||0) + toEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
       const ty = (parseFloat(toEl.style.top||0) + toEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
-      ctx.strokeStyle = "rgba(16,245,168,1)";
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([6,4]);
-      ctx.beginPath();
-      ctx.moveTo(fx, fy);
-      ctx.lineTo(tx, ty);
-      ctx.stroke();
-      ctx.setLineDash([]);
 
-      // Кнопка отсоединения в середине нитки
+      const dx = tx - fx, dy = ty - fy;
+      const len = Math.sqrt(dx*dx + dy*dy);
+
+      // Определяем — есть ли активный сплит на одном из концов
+      const fromAccountId = conn.from.startsWith("ai_") ? null : conn.from.startsWith("timer_") ? null : conn.from;
+      const toAccountId   = conn.to.startsWith("ai_") ? null : conn.to.startsWith("timer_") ? null : conn.to;
+      const isActive = (fromAccountId && runningSplits.has(fromAccountId)) || (toAccountId && runningSplits.has(toAccountId));
+
+      if (isActive) {
+        // ── АКТИВНАЯ нитка: светящийся поток ──
+
+        // Базовый слой — тёмный кабель
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(0,255,180,0.12)";
+        ctx.lineWidth = 6;
+        ctx.lineCap = "round";
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Средний слой — свечение
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(16,245,168,0.35)";
+        ctx.lineWidth = 3;
+        ctx.shadowColor = "#10f5a8";
+        ctx.shadowBlur = 12;
+        ctx.stroke();
+
+        // Тонкая яркая нитка поверх
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(16,245,168,0.9)";
+        ctx.lineWidth = 1.2;
+        ctx.shadowColor = "#10f5a8";
+        ctx.shadowBlur = 20;
+        ctx.stroke();
+
+        ctx.shadowBlur = 0;
+
+        // Бегущие частицы по нитке
+        const speed = 0.00025;
+        const particleCount = Math.max(2, Math.floor(len / 80));
+        for (let p = 0; p < particleCount; p++) {
+          const offset = (p / particleCount);
+          const t = ((now * speed + offset) % 1);
+          const px = fx + dx * t;
+          const py = fy + dy * t;
+
+          // Хвост частицы
+          const tailLen = 0.12;
+          const t0 = Math.max(0, t - tailLen);
+          const tailX = fx + dx * t0;
+          const tailY = fy + dy * t0;
+
+          const grad = ctx.createLinearGradient(tailX, tailY, px, py);
+          grad.addColorStop(0, "rgba(16,245,168,0)");
+          grad.addColorStop(1, "rgba(255,255,255,0.95)");
+
+          ctx.beginPath();
+          ctx.moveTo(tailX, tailY);
+          ctx.lineTo(px, py);
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = "#ffffff";
+          ctx.shadowBlur = 16;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Точка-голова частицы
+          ctx.beginPath();
+          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = "#10f5a8";
+          ctx.shadowBlur = 20;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+
+      } else {
+        // ── НЕАКТИВНАЯ нитка: стильная статичная ──
+
+        // Внешнее мягкое свечение
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(92,110,248,0.08)";
+        ctx.lineWidth = 8;
+        ctx.lineCap = "round";
+        ctx.stroke();
+
+        // Основная линия с пунктиром
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.setLineDash([8, 6]);
+        ctx.strokeStyle = "rgba(130,148,255,0.5)";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "#818cf8";
+        ctx.shadowBlur = 6;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.shadowBlur = 0;
+
+        // Точки на концах
+        [{ x: fx, y: fy }, { x: tx, y: ty }].forEach(pt => {
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(130,148,255,0.6)";
+          ctx.shadowColor = "#818cf8";
+          ctx.shadowBlur = 10;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+      }
+
+      // Кнопка отсоединения
       const mx = (fx + tx) / 2;
       const my = (fy + ty) / 2;
       const btn = document.createElement("div");
       btn.className = "connDisconnectBtn";
-      btn.textContent = "✕ отсоединить";
+      btn.textContent = "✕";
       btn.style.cssText = `
         position:absolute;
         left:${mx}px;
         top:${my}px;
         transform:translate(-50%,-50%);
-        background:rgba(15,18,30,0.92);
-        border:1px solid rgba(16,245,168,0.5);
-        border-radius:6px;
+        background:rgba(15,18,30,0.95);
+        border:1px solid rgba(16,245,168,0.4);
+        border-radius:50%;
         color:#10f5a8;
-        font:500 11px 'Space Grotesk',sans-serif;
-        padding:3px 8px;
+        font:700 11px 'Space Grotesk',sans-serif;
+        width:20px;height:20px;
+        display:flex;align-items:center;justify-content:center;
         cursor:pointer;
         z-index:50;
         pointer-events:all;
-        white-space:nowrap;
         opacity:0;
         transition:opacity 0.15s;
+        box-shadow:0 0 10px rgba(16,245,168,0.3);
       `;
       btn.addEventListener("mouseenter", () => btn.style.opacity = "1");
       btn.addEventListener("mouseleave", () => btn.style.opacity = "0");
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
         const conn = connections[idx];
-        // Если отсоединяем AI агента от анкеты — очищаем accountId
         const aiId = conn.from.startsWith("ai_") ? conn.from : conn.to.startsWith("ai_") ? conn.to : null;
         if (aiId) {
           const cardId = aiId.replace("ai_", "");
@@ -1869,99 +2014,6 @@ function initInfiniteCanvas() {
       wrapper.appendChild(btn);
     });
   }
-
-  // Перезаписываем drawWeb на drawConnections
-  window._clawDrawWeb = drawConnections;
-
-  // Drag нитки
-  let drawingLine = false;
-  let lineFromId = null;
-  let lineEndX = 0, lineEndY = 0;
-
-  container.addEventListener("mousedown", (e) => {
-    const dot = e.target.closest(".sqConnectDot");
-    if (!dot) return;
-    e.stopPropagation();
-    e.preventDefault();
-    drawingLine = true;
-    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup") || dot.closest(".sqTimerGroup");
-    lineFromId = group?.dataset.accountId;
-    const rect = wrapper.getBoundingClientRect();
-    lineEndX = e.clientX - rect.left;
-    lineEndY = e.clientY - rect.top;
-  });
-
-  window.addEventListener("mousemove", (e) => {
-    if (!drawingLine) return;
-    const rect = wrapper.getBoundingClientRect();
-    lineEndX = e.clientX - rect.left;
-    lineEndY = e.clientY - rect.top;
-
-    // Перерисовываем с временной линией
-    drawConnections();
-    const ctx = canvas.getContext("2d");
-    const fromEl = container.querySelector(`[data-account-id="${lineFromId}"]`);
-    if (!fromEl) return;
-    const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
-    const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
-    ctx.strokeStyle = "rgba(16,245,168,0.8)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([6,4]);
-    ctx.beginPath();
-    ctx.moveTo(fx, fy);
-    ctx.lineTo(lineEndX, lineEndY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  });
-
-  window.addEventListener("mouseup", (e) => {
-    if (!drawingLine) return;
-    drawingLine = false;
-    // Проверяем попали ли на карточку
-    const target = document.elementFromPoint(e.clientX, e.clientY);
-    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup") || target?.closest(".sqTimerGroup");
-    const toId = toGroup?.dataset.accountId;
-    if (toId && toId !== lineFromId) {
-      const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
-      if (!exists) {
-        connections.push({ from: lineFromId, to: toId });
-        saveConnections();
-
-        // Если соединяем AI агента с анкетой — обновляем accountId агента
-        const aiId = lineFromId.startsWith("ai_") ? lineFromId : toId.startsWith("ai_") ? toId : null;
-        const accountId = lineFromId.startsWith("ai_") ? toId : toId.startsWith("ai_") ? lineFromId : null;
-        if (aiId && accountId && !accountId.startsWith("ai_") && !accountId.startsWith("timer_")) {
-          const cardId = aiId.replace("ai_", "");
-          const aiCard = analyticsCards.find(c => c.cardId === cardId);
-          if (aiCard) {
-            aiCard.accountId = accountId;
-            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ account_id: accountId }),
-            }).catch(() => {});
-          }
-        }
-      }
-    }
-    drawConnections();
-  });
-
-  // Двойной клик по соединению — удалить (по карточке)
-  container.addEventListener("dblclick", (e) => {
-    const dot = e.target.closest(".sqConnectDot");
-    if (!dot) return;
-    const group = dot.closest(".sqGroup");
-    const id = group?.dataset.accountId;
-    const idx = connections.findIndex(c => c.from===id||c.to===id);
-    if (idx !== -1) {
-      connections.splice(idx, 1);
-      saveConnections();
-      drawConnections();
-    }
-  });
-
-}
 
 
 
@@ -2079,8 +2131,10 @@ function addTimerCard() {
   const container = document.getElementById("accountsList");
   if (!container) return;
 
-  const x = 400 + Math.random() * 200;
-  const y = 200 + Math.random() * 200;
+  const x = (window._ctxSpawnX != null) ? window._ctxSpawnX : 400 + Math.random() * 200;
+  const y = (window._ctxSpawnY != null) ? window._ctxSpawnY : 200 + Math.random() * 200;
+  window._ctxSpawnX = null;
+  window._ctxSpawnY = null;
 
   const card = { id, workMin: 1, workSec: 0, pauseMin: 0, pauseSec: 30, x, y, platform: activePlatform };
   timerCards.push(card);
@@ -2393,6 +2447,14 @@ function renderAICardsOnCanvas() {
       e.stopPropagation();
       group.remove();
       analyticsCards = analyticsCards.filter(c => c.cardId !== card.cardId);
+      // Чистим нитки связанные с этой AI-карточкой
+      const aiNodeId = "ai_" + card.cardId;
+      try {
+        const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+        const filtered = conns.filter(c => c.from !== aiNodeId && c.to !== aiNodeId);
+        localStorage.setItem("claw_connections", JSON.stringify(filtered));
+        if (window._clawDrawWeb) window._clawDrawWeb();
+      } catch {}
       try {
         await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(card.cardId)}`, { method: "DELETE" });
       } catch {}
@@ -2400,13 +2462,15 @@ function renderAICardsOnCanvas() {
 
     aCard.querySelector(".sqAIEditBtn").onclick = (e) => {
       e.stopPropagation();
-      document.getElementById("aModalBotName").value = card.botName || "";
-      document.getElementById("aModalBotAge").value = card.botAge || "";
-      document.getElementById("aModalBotGender").value = card.botGender || "female";
-      document.getElementById("aModalLocation").value = card.location || "";
-      document.getElementById("aModalContacts").value = card.contacts || "";
+      const saveBtn = document.getElementById("aModalSaveBtn");
+      document.getElementById("aModalBotName").value         = card.botName || "";
+      document.getElementById("aModalBotAge").value          = card.botAge || "";
+      document.getElementById("aModalBotGender").value       = card.botGender || "female";
+      document.getElementById("aModalLocation").value        = card.location || "";
+      document.getElementById("aModalContacts").value        = card.contacts || "";
       document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
-      document.getElementById("aModalSaveBtn").dataset.editCardId = card.cardId;
+      saveBtn.dataset.editCardId    = card.cardId;
+      saveBtn.dataset.editAccountId = card.accountId || "";
       document.getElementById("analyticsModal").classList.add("open");
     };
 
@@ -2418,8 +2482,10 @@ function renderAICardsOnCanvas() {
       group.style.left = saved.x + "px";
       group.style.top = saved.y + "px";
     } else {
-      const x = 700 + Math.random() * 200;
-      const y = 100 + Math.random() * 200;
+      const x = (window._ctxSpawnX != null) ? window._ctxSpawnX : 700 + Math.random() * 200;
+      const y = (window._ctxSpawnY != null) ? window._ctxSpawnY : 100 + Math.random() * 200;
+      window._ctxSpawnX = null;
+      window._ctxSpawnY = null;
       group.style.left = x + "px";
       group.style.top = y + "px";
       canvasPositions[`ai_${card.cardId}`] = { x, y };
@@ -2769,23 +2835,45 @@ function renderAnalyticsGrid(accounts) {
       deleteBtn._deleting = false;
     };
 
-    node.querySelector(".analyticsEditBtn").onclick = () => openAnalyticsModal(card.accountId, accounts);
+    node.querySelector(".analyticsEditBtn").onclick = () => openAnalyticsModal(card.accountId, accounts, card.cardId);
 
     analyticsGrid.appendChild(node);
   });
 }
 
 async function openAnalyticsModal(accountId, accounts) {
+  const saveBtn = document.getElementById("aModalSaveBtn");
+
+  // Если accountId не передан — берём первый аккаунт активной платформы
+  let resolvedAccountId = accountId;
+  if (!resolvedAccountId && cachedAccounts.length) {
+    const platformAcc = cachedAccounts.find(a =>
+      (a.platform || "").toLowerCase() === (activePlatform || "").toLowerCase()
+    );
+    if (platformAcc) resolvedAccountId = platformAcc.id;
+  }
+
+  saveBtn.dataset.editAccountId = resolvedAccountId || "";
+
+  // Грузим данные из ai_settings если есть accountId
+  let settings = {};
+  if (resolvedAccountId) {
+    try {
+      const res = await fetch(`/api/ai-settings/${encodeURIComponent(resolvedAccountId)}`);
+      const data = await res.json();
+      if (data.ok) settings = data.settings || {};
+    } catch(e) {}
+  }
+
+  // Фоллбэк на analyticsCards если ai_settings пустые
   const card = accountId ? (analyticsCards.find(c => c.accountId === accountId) || {}) : {};
 
-  document.getElementById("aModalBotName").value         = card.botName || "";
-  document.getElementById("aModalBotAge").value          = card.botAge || "";
-  document.getElementById("aModalBotGender").value       = card.botGender || "female";
-  document.getElementById("aModalLocation").value        = card.location || "";
-  document.getElementById("aModalContacts").value        = card.contacts || "";
-  document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
-
-  // ничего
+  document.getElementById("aModalBotName").value         = settings.bot_name         || card.botName || "";
+  document.getElementById("aModalBotAge").value          = settings.bot_age           || card.botAge  || "";
+  document.getElementById("aModalBotGender").value       = settings.bot_gender        || card.botGender || "female";
+  document.getElementById("aModalLocation").value        = settings.location          || card.location || "";
+  document.getElementById("aModalContacts").value        = settings.contacts          || card.contacts || "";
+  document.getElementById("aModalContactsTrigger").value = settings.contacts_trigger  || card.contactsTrigger || "";
 
   document.getElementById("analyticsModal").classList.add("open");
 }
@@ -2806,59 +2894,57 @@ document.getElementById("analyticsModal")?.addEventListener("click", (e) => {
 });
 
 document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => {
-  const card = {
-    accountId:       document.getElementById("aModalSaveBtn").dataset.editCardId || "ai_" + Date.now(),
-    groqKeys:        "",
-    groqKey:         "",
-    groqModel:       "llama-3.3-70b-versatile",
-    botName:         document.getElementById("aModalBotName").value.trim(),
-    botAge:          document.getElementById("aModalBotAge").value.trim(),
-    botGender:       document.getElementById("aModalBotGender").value,
-    location:        document.getElementById("aModalLocation").value.trim(),
-    persona:         "",
-    goal:            "",
-    stopTopics:      "",
-    contacts:        document.getElementById("aModalContacts").value.trim(),
-    contactsTrigger: document.getElementById("aModalContactsTrigger").value.trim(),
-    tgChatId:        "",
-    geminiKeys:      "",
-  };
+  const saveBtn = document.getElementById("aModalSaveBtn");
+  const targetAccountId = saveBtn.dataset.editAccountId || null;
 
-  const editCardId = document.getElementById("aModalSaveBtn").dataset.editCardId;
+  const botName         = document.getElementById("aModalBotName").value.trim();
+  const botAge          = document.getElementById("aModalBotAge").value.trim();
+  const botGender       = document.getElementById("aModalBotGender").value;
+  const location        = document.getElementById("aModalLocation").value.trim();
+  const contacts        = document.getElementById("aModalContacts").value.trim();
+  const contactsTrigger = document.getElementById("aModalContactsTrigger").value.trim();
+
+  if (!targetAccountId) {
+    alert("Сначала выбери анкету на странице Анкеты, затем открой AI-Менеджер");
+    return;
+  }
+
   try {
+    // Обновляем analytics_cards если есть cardId
+    const editCardId = saveBtn.dataset.editCardId || null;
     if (editCardId) {
-      // Обновление существующей
       await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(editCardId)}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bot_name: card.botName, bot_age: card.botAge, bot_gender: card.botGender,
-          location: card.location, contacts: card.contacts, contacts_trigger: card.contactsTrigger,
-        }),
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
       });
-    } else {
-      // Создание новой
-      const res = await fetch(WORKER_API + "/api/analytics-cards", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          account_id: null, bot_name: card.botName, bot_age: card.botAge,
-          bot_gender: card.botGender, location: card.location, persona: "",
-          goal: "", stop_topics: "", contacts: card.contacts,
-          contacts_trigger: card.contactsTrigger, tg_chat_id: "",
-          platform: activePlatform,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
     }
+
+    // ГЛАВНОЕ: сохраняем в ai_settings — именно отсюда читает воркер
+    const res = await fetch(`/api/ai-settings/${encodeURIComponent(targetAccountId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bot_name: botName,
+        bot_age: botAge,
+        bot_gender: botGender,
+        location,
+        contacts,
+        contacts_trigger: contactsTrigger,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
   } catch (err) {
-    alert("Не удалось сохранить аналитика: " + err.message);
+    alert("Не удалось сохранить: " + err.message);
     return;
   }
 
   document.getElementById("analyticsModal").classList.remove("open");
   await loadAnalyticsCards();
   renderAICardsOnCanvas();
-  delete document.getElementById("aModalSaveBtn").dataset.editCardId;
+  delete saveBtn.dataset.editAccountId;
+  delete saveBtn.dataset.editCardId;
 });
 
 // ── Модалки ───────────────────────────────────────────────
@@ -3049,6 +3135,7 @@ async function toggleSplit(accountId, splitBtn, splitInput, likesBtn, groqBtn, l
   }
 
   runningSplits.add(accountId);
+  if (window._clawStartAnim) window._clawStartAnim();
   window._splitLogs[accountId] = [];
   pushLog(accountId, "Сплит запущен");
   // Инициализируем живой счётчик из текущей статистики
