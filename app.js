@@ -1685,7 +1685,173 @@ function initInfiniteCanvas() {
   });
 
   applyTransform();
+ 
+  // Контекстное меню по правой кнопке
+  const ctxMenu = document.createElement("div");
+  ctxMenu.id = "canvasCtxMenu";
+  ctxMenu.style.cssText = "display:none;position:fixed;z-index:1000;background:rgba(15,18,30,0.97);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px 0;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.4);";
+  ctxMenu.innerHTML = `
+    <div id="ctxAddAI" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
+      ✦ Добавить AI-менеджера
+    </div>
+  `;
+  document.body.appendChild(ctxMenu);
+
+  wrapper.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".sqGroup")) return;
+    e.preventDefault();
+    ctxMenu.style.display = "block";
+    ctxMenu.style.left = e.clientX + "px";
+    ctxMenu.style.top = e.clientY + "px";
+  });
+
+  document.getElementById("ctxAddAI").onclick = () => {
+    ctxMenu.style.display = "none";
+    document.getElementById("addAnalyticsBtn")?.click();
+  };
+
+  document.addEventListener("click", () => { ctxMenu.style.display = "none"; });
+  document.addEventListener("contextmenu", (e) => {
+    if (!e.target.closest("#canvasWrapper")) ctxMenu.style.display = "none";
+  });
+
+  // Нитки между карточками
+  const connections = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+
+  function saveConnections() {
+    localStorage.setItem("claw_connections", JSON.stringify(connections));
+  }
+
+  function drawConnections() {
+    const ctx = canvas.getContext("2d");
+    const W = wrapper.offsetWidth;
+    const H = wrapper.offsetHeight;
+    canvas.width = W;
+    canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    // Паутина между всеми карточками
+    const groups = [...container.querySelectorAll(".sqGroup")];
+    if (groups.length >= 2) {
+      const centers = groups.map(g => ({
+        x: (parseFloat(g.style.left||0) + g.offsetWidth/2) * canvasTransform.scale + canvasTransform.x,
+        y: (parseFloat(g.style.top||0) + g.offsetHeight/2) * canvasTransform.scale + canvasTransform.y,
+      }));
+      for (let i = 0; i < centers.length; i++) {
+        for (let j = i+1; j < centers.length; j++) {
+          const dx = centers[i].x - centers[j].x;
+          const dy = centers[i].y - centers[j].y;
+          const dist = Math.sqrt(dx*dx+dy*dy);
+          if (dist > 600) continue;
+          const alpha = Math.max(0, 1 - dist/600) * 0.15;
+          ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(centers[i].x, centers[i].y);
+          ctx.lineTo(centers[j].x, centers[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Нарисовать сохранённые соединения
+    connections.forEach(conn => {
+      const fromEl = container.querySelector(`.sqGroup[data-account-id="${conn.from}"]`);
+      const toEl = container.querySelector(`.sqGroup[data-account-id="${conn.to}"]`);
+      if (!fromEl || !toEl) return;
+      const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+      const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+      const tx = (parseFloat(toEl.style.left||0) + toEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+      const ty = (parseFloat(toEl.style.top||0) + toEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+      ctx.strokeStyle = "rgba(16,245,168,0.6)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    });
+  }
+
+  // Перезаписываем drawWeb на drawConnections
+  window._clawDrawWeb = drawConnections;
+
+  // Drag нитки
+  let drawingLine = false;
+  let lineFromId = null;
+  let lineEndX = 0, lineEndY = 0;
+
+  container.addEventListener("mousedown", (e) => {
+    const dot = e.target.closest(".sqConnectDot");
+    if (!dot) return;
+    e.stopPropagation();
+    e.preventDefault();
+    drawingLine = true;
+    const group = dot.closest(".sqGroup");
+    lineFromId = group?.dataset.accountId;
+    const rect = wrapper.getBoundingClientRect();
+    lineEndX = e.clientX - rect.left;
+    lineEndY = e.clientY - rect.top;
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!drawingLine) return;
+    const rect = wrapper.getBoundingClientRect();
+    lineEndX = e.clientX - rect.left;
+    lineEndY = e.clientY - rect.top;
+
+    // Перерисовываем с временной линией
+    drawConnections();
+    const ctx = canvas.getContext("2d");
+    const fromEl = container.querySelector(`.sqGroup[data-account-id="${lineFromId}"]`);
+    if (!fromEl) return;
+    const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+    const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+    ctx.strokeStyle = "rgba(16,245,168,0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(lineEndX, lineEndY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  window.addEventListener("mouseup", (e) => {
+    if (!drawingLine) return;
+    drawingLine = false;
+    // Проверяем попали ли на карточку
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const toGroup = target?.closest(".sqGroup");
+    const toId = toGroup?.dataset.accountId;
+    if (toId && toId !== lineFromId) {
+      const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
+      if (!exists) {
+        connections.push({ from: lineFromId, to: toId });
+        saveConnections();
+      }
+    }
+    drawConnections();
+  });
+
+  // Двойной клик по соединению — удалить (по карточке)
+  container.addEventListener("dblclick", (e) => {
+    const dot = e.target.closest(".sqConnectDot");
+    if (!dot) return;
+    const group = dot.closest(".sqGroup");
+    const id = group?.dataset.accountId;
+    const idx = connections.findIndex(c => c.from===id||c.to===id);
+    if (idx !== -1) {
+      connections.splice(idx, 1);
+      saveConnections();
+      drawConnections();
+    }
+  });
+
 }
+
+
 
 function placeGroupOnCanvas(group, accountId) {
   const saved = canvasPositions[accountId];
@@ -1697,7 +1863,7 @@ function placeGroupOnCanvas(group, accountId) {
     const idx = document.getElementById("accountsList").querySelectorAll(".sqGroup").length;
     const angle = idx * 2.4;
     const radius = 60 + idx * 55;
-    const cx = 50, cy = 50;
+    const cx = 500, cy = 100;
     const x = cx + Math.cos(angle) * radius;
     const y = cy + Math.sin(angle) * radius;
     group.style.left = x + "px";
