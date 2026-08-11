@@ -4282,6 +4282,34 @@ function startApp() {
       if (!isOpen) loadKeySlots();
     };
   }
+
+  document.getElementById("addKeySlotBtn").onclick = () => openKeySlotModal();
+
+  document.getElementById("keySlotModalClose").onclick = () => {
+    document.getElementById("keySlotModal").classList.remove("open");
+  };
+
+  document.getElementById("keySlotSaveBtn").onclick = async () => {
+    const saveBtn = document.getElementById("keySlotSaveBtn");
+    const slotId = saveBtn.dataset.slotId || null;
+    const name = document.getElementById("keySlotName").value.trim() || "Слот";
+    const keys = document.getElementById("keySlotKeys").value.trim();
+    if (slotId) {
+      await fetch(WORKER_API + `/api/key-slots/${slotId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, keys }),
+      });
+    } else {
+      await fetch(WORKER_API + "/api/key-slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, keys }),
+      });
+    }
+    document.getElementById("keySlotModal").classList.remove("open");
+    loadKeySlots();
+  };
   if (appStarted) return;
   appStarted = true;
 
