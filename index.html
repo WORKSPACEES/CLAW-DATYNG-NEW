@@ -129,6 +129,25 @@
       </div>
     </div>
 
+    <!-- Модалка удаления анкеты -->
+<div class="modalBackdrop" id="deleteAccountModal">
+  <div class="modal" style="max-width:340px;">
+    <div class="modalHead">
+      <span>Удаление анкеты</span>
+      <button class="modalClose" id="deleteAccountModalClose">✕</button>
+    </div>
+    <div class="modalBody">
+      <p style="font:400 13px/1.6 'Space Grotesk',sans-serif;color:var(--text2);">
+        Удалить анкету <span id="deleteAccountName" style="color:#fb7185;font-weight:600;"></span>? Это действие необратимо.
+      </p>
+      <div style="display:flex;gap:8px;margin-top:18px;">
+        <button class="ghost" id="deleteAccountCancelBtn" style="flex:1;">Отмена</button>
+        <button class="small danger" id="deleteAccountConfirmBtn" style="flex:1;padding:10px;">Удалить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
     <!-- Модалка профиля -->
     <div class="modalBackdrop" id="profileModal">
       <div class="modal">
