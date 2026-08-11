@@ -3414,6 +3414,7 @@ async function runOneChatsStep(accountId, resultEl, round, passLabel) {
     if (groqData.blocked || groqStatus === "profile_blocked") {
       pushLog(accountId, "БЛОК в чатах — запускаю резерв");
       await loadAccounts();
+      renderSquareGridFromCache();
       return {
         blocked: true,
         reserve_account_id:
