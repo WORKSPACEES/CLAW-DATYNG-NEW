@@ -1785,8 +1785,8 @@ function initInfiniteCanvas() {
 
     // Нарисовать сохранённые соединения
     connections.forEach(conn => {
-      const fromEl = container.querySelector(`.sqGroup[data-account-id="${conn.from}"]`);
-      const toEl = container.querySelector(`.sqGroup[data-account-id="${conn.to}"]`);
+      const fromEl = container.querySelector(`[data-account-id="${conn.from}"]`);
+      const toEl = container.querySelector(`[data-account-id="${conn.to}"]`);
       if (!fromEl || !toEl) return;
       const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
       const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
@@ -1852,7 +1852,7 @@ function initInfiniteCanvas() {
     drawingLine = false;
     // Проверяем попали ли на карточку
     const target = document.elementFromPoint(e.clientX, e.clientY);
-    const toGroup = target?.closest(".sqGroup");
+    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup");
     const toId = toGroup?.dataset.accountId;
     if (toId && toId !== lineFromId) {
       const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
@@ -1988,8 +1988,15 @@ function renderAICardsOnCanvas() {
     const group = document.createElement("div");
     group.className = "sqAIGroup";
     group.dataset.cardId = card.cardId;
+    group.dataset.accountId = "ai_" + card.cardId;
     group.style.position = "absolute";
     group.style.cursor = "grab";
+
+    const dot = document.createElement("div");
+    dot.className = "sqConnectDot";
+    dot.title = "Потяни чтобы соединить";
+    dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);";
+    group.appendChild(dot);
 
     const aCard = document.createElement("div");
     aCard.className = "sqAnalyticsCard";
