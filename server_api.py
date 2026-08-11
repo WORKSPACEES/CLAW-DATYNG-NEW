@@ -968,6 +968,12 @@ def api_save_analytics_card(payload: AnalyticsCardPayload):
     supabase.table("analytics_cards").insert(data).execute()
     return {"ok": True, "card": data}
 
+@app.patch("/api/analytics-cards/{card_id}")
+def api_update_analytics_card(card_id: str, payload: AnalyticsCardPayload):
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    supabase.table("analytics_cards").update(data).eq("id", card_id).execute()
+    return {"ok": True}
+
 @app.delete("/api/analytics-cards/{card_id}")
 def api_delete_analytics_card(card_id: str):
     supabase.table("analytics_cards").delete().eq("id", card_id).execute()
