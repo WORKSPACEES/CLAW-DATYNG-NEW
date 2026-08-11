@@ -1847,6 +1847,21 @@ function initInfiniteCanvas() {
       btn.addEventListener("mouseleave", () => btn.style.opacity = "0");
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
+        const conn = connections[idx];
+        // Если отсоединяем AI агента от анкеты — очищаем accountId
+        const aiId = conn.from.startsWith("ai_") ? conn.from : conn.to.startsWith("ai_") ? conn.to : null;
+        if (aiId) {
+          const cardId = aiId.replace("ai_", "");
+          const aiCard = analyticsCards.find(c => c.cardId === cardId);
+          if (aiCard) {
+            aiCard.accountId = null;
+            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ account_id: null }),
+            }).catch(() => {});
+          }
+        }
         connections.splice(idx, 1);
         saveConnections();
         drawConnections();
@@ -1911,6 +1926,22 @@ function initInfiniteCanvas() {
       if (!exists) {
         connections.push({ from: lineFromId, to: toId });
         saveConnections();
+
+        // Если соединяем AI агента с анкетой — обновляем accountId агента
+        const aiId = lineFromId.startsWith("ai_") ? lineFromId : toId.startsWith("ai_") ? toId : null;
+        const accountId = lineFromId.startsWith("ai_") ? toId : toId.startsWith("ai_") ? lineFromId : null;
+        if (aiId && accountId && !accountId.startsWith("ai_") && !accountId.startsWith("timer_")) {
+          const cardId = aiId.replace("ai_", "");
+          const aiCard = analyticsCards.find(c => c.cardId === cardId);
+          if (aiCard) {
+            aiCard.accountId = accountId;
+            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ account_id: accountId }),
+            }).catch(() => {});
+          }
+        }
       }
     }
     drawConnections();
