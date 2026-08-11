@@ -1761,6 +1761,9 @@ function initInfiniteCanvas() {
     canvas.height = H;
     ctx.clearRect(0, 0, W, H);
 
+    // Удаляем старые кнопки отсоединения
+    wrapper.querySelectorAll(".connDisconnectBtn").forEach(el => el.remove());
+
     // Паутина между всеми карточками
     const groups = [...container.querySelectorAll(".sqGroup")];
     if (groups.length >= 2) {
@@ -1786,7 +1789,7 @@ function initInfiniteCanvas() {
     }
 
     // Нарисовать сохранённые соединения
-    connections.forEach(conn => {
+    connections.forEach((conn, idx) => {
       const fromEl = container.querySelector(`[data-account-id="${conn.from}"]`);
       const toEl = container.querySelector(`[data-account-id="${conn.to}"]`);
       if (!fromEl || !toEl) return;
@@ -1802,6 +1805,40 @@ function initInfiniteCanvas() {
       ctx.lineTo(tx, ty);
       ctx.stroke();
       ctx.setLineDash([]);
+
+      // Кнопка отсоединения в середине нитки
+      const mx = (fx + tx) / 2;
+      const my = (fy + ty) / 2;
+      const btn = document.createElement("div");
+      btn.className = "connDisconnectBtn";
+      btn.textContent = "✕ отсоединить";
+      btn.style.cssText = `
+        position:absolute;
+        left:${mx}px;
+        top:${my}px;
+        transform:translate(-50%,-50%);
+        background:rgba(15,18,30,0.92);
+        border:1px solid rgba(16,245,168,0.5);
+        border-radius:6px;
+        color:#10f5a8;
+        font:500 11px 'Space Grotesk',sans-serif;
+        padding:3px 8px;
+        cursor:pointer;
+        z-index:50;
+        pointer-events:all;
+        white-space:nowrap;
+        opacity:0;
+        transition:opacity 0.15s;
+      `;
+      btn.addEventListener("mouseenter", () => btn.style.opacity = "1");
+      btn.addEventListener("mouseleave", () => btn.style.opacity = "0");
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        connections.splice(idx, 1);
+        saveConnections();
+        drawConnections();
+      });
+      wrapper.appendChild(btn);
     });
   }
 
@@ -1986,7 +2023,7 @@ function renderAICardsOnCanvas() {
 
   container.querySelectorAll(".sqAIGroup").forEach(el => el.remove());
 
-  analyticsCards.forEach(card => {
+  analyticsCards.filter(card => (card.platform || "Mamba") === activePlatform).forEach(card => {
     const group = document.createElement("div");
     group.className = "sqAIGroup";
     group.dataset.cardId = card.cardId;
@@ -2327,6 +2364,7 @@ async function loadAnalyticsCards() {
     analyticsCards = (data.cards || []).map(c => ({
       cardId:          c.id,
       accountId:       c.account_id,
+      platform:        c.platform || "Mamba",
       botName:         c.bot_name || "",
       botAge:          c.bot_age || "",
       botGender:       c.bot_gender || "female",
@@ -2465,6 +2503,7 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
           bot_gender: card.botGender, location: card.location, persona: "",
           goal: "", stop_topics: "", contacts: card.contacts,
           contacts_trigger: card.contactsTrigger, tg_chat_id: "",
+          platform: activePlatform,
         }),
       });
       const data = await res.json();
