@@ -921,6 +921,7 @@ async def proxy_image(url: str, account_id: str = ""):
 
 class AnalyticsCardPayload(BaseModel):
     account_id: Optional[str] = None
+    owner_email: Optional[str] = None
     bot_name: str = ""
     bot_age: str = ""
     bot_gender: str = "female"
@@ -937,7 +938,7 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     owner_emails = get_team_owner_emails(session["email"])
     accounts_res = supabase.table("accounts").select("id").in_("owner_email", owner_emails).execute()
     account_ids = [a["id"] for a in (accounts_res.data or []) if a.get("id")]
-    cards_res = supabase.table("analytics_cards").select("*").execute()
+    cards_res = supabase.table("analytics_cards").select("*").in_("owner_email", owner_emails).execute()
     null_cards = [c for c in (cards_res.data or []) if c.get("account_id") is None]
     if account_ids:
         account_cards = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
@@ -967,9 +968,11 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     return {"ok": True, "cards": result}
 
 @app.post("/api/analytics-cards")
-def api_save_analytics_card(payload: AnalyticsCardPayload):
+def api_save_analytics_card(payload: AnalyticsCardPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
     data = payload.model_dump()
     data["id"] = str(uuid.uuid4())
+    data["owner_email"] = session["email"]
     supabase.table("analytics_cards").insert(data).execute()
     return {"ok": True, "card": data}
 
