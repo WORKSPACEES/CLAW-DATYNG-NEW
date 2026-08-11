@@ -4272,6 +4272,16 @@ async function loadTeamMembers() {
 }
 
 function startApp() {
+  // Панель ключей
+  const _toggleBtn = document.getElementById("keysPanelToggle");
+  const _keysPanel = document.getElementById("keysPanel");
+  if (_toggleBtn && _keysPanel) {
+    _toggleBtn.onclick = () => {
+      const isOpen = _keysPanel.style.right === "0px";
+      _keysPanel.style.right = isOpen ? "-340px" : "0px";
+      if (!isOpen) loadKeySlots();
+    };
+  }
   if (appStarted) return;
   appStarted = true;
 
