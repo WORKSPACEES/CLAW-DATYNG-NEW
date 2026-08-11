@@ -11,7 +11,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib import request, error
 from urllib.parse import urljoin
 
@@ -920,9 +920,7 @@ async def proxy_image(url: str, account_id: str = ""):
 # ── Analytics cards ──────────────────────────────────────
 
 class AnalyticsCardPayload(BaseModel):
-    account_id: Optional[str] = None
-    owner_email: Optional[str] = None
-    platform: Optional[str] = None
+    account_id: str
     bot_name: str = ""
     bot_age: str = ""
     bot_gender: str = "female"
@@ -939,24 +937,18 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     owner_emails = get_team_owner_emails(session["email"])
     accounts_res = supabase.table("accounts").select("id").in_("owner_email", owner_emails).execute()
     account_ids = [a["id"] for a in (accounts_res.data or []) if a.get("id")]
-    cards_res = supabase.table("analytics_cards").select("*").in_("owner_email", owner_emails).execute()
-    null_cards = [c for c in (cards_res.data or []) if c.get("account_id") is None]
-    if account_ids:
-        account_cards = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
-        all_cards = (account_cards.data or []) + null_cards
-    else:
-        all_cards = null_cards
-    cards_res_data = all_cards
-    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute() if account_ids else type('obj', (object,), {'data': []})()
+    if not account_ids:
+        return {"ok": True, "cards": []}
+    cards_res = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
+    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute()
     settings_by_account = {s.get("account_id"): s for s in (settings_res.data or [])}
     result = []
-    for card in cards_res_data:
+    for card in (cards_res.data or []):
         account_id = card.get("account_id", "")
         settings = settings_by_account.get(account_id) or {}
         result.append({
             "id": card.get("id", ""),
             "account_id": account_id,
-            "platform": card.get("platform") or "Mamba",
             "bot_name": card.get("bot_name") or settings.get("bot_name") or "",
             "bot_age": card.get("bot_age") or settings.get("bot_age") or "",
             "bot_gender": card.get("bot_gender") or settings.get("bot_gender") or "female",
@@ -970,19 +962,11 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     return {"ok": True, "cards": result}
 
 @app.post("/api/analytics-cards")
-def api_save_analytics_card(payload: AnalyticsCardPayload, authorization: str | None = Header(default=None)):
-    session = require_auth(authorization)
+def api_save_analytics_card(payload: AnalyticsCardPayload):
     data = payload.model_dump()
     data["id"] = str(uuid.uuid4())
-    data["owner_email"] = session["email"]
     supabase.table("analytics_cards").insert(data).execute()
     return {"ok": True, "card": data}
-
-@app.patch("/api/analytics-cards/{card_id}")
-def api_update_analytics_card(card_id: str, payload: AnalyticsCardPayload):
-    data = {k: v for k, v in payload.model_dump().items() if v is not None}
-    supabase.table("analytics_cards").update(data).eq("id", card_id).execute()
-    return {"ok": True}
 
 @app.delete("/api/analytics-cards/{card_id}")
 def api_delete_analytics_card(card_id: str):
