@@ -1367,6 +1367,67 @@ async def intcity_send(payload: IntCitySendRequest, authorization: str | None = 
         "summary": f"Отправлено {sent} из {len(leads)}"
     }
 
+# ── Key Slots ─────────────────────────────────────────────
+
+class KeySlotPayload(BaseModel):
+    name: str = "Слот"
+    keys: str = ""
+
+@app.get("/api/key-slots")
+def api_get_key_slots(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("key_slots").select("*").eq("owner_email", session["email"]).order("created_at").execute()
+    return {"ok": True, "slots": res.data or []}
+
+@app.post("/api/key-slots")
+def api_create_key_slot(payload: KeySlotPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("key_slots").insert({
+        "owner_email": session["email"],
+        "name": payload.name,
+        "keys": payload.keys,
+    }).execute()
+    return {"ok": True, "slot": res.data[0]}
+
+@app.patch("/api/key-slots/{slot_id}")
+def api_update_key_slot(slot_id: str, payload: KeySlotPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    supabase.table("key_slots").update({
+        "name": payload.name,
+        "keys": payload.keys,
+    }).eq("id", slot_id).eq("owner_email", session["email"]).execute()
+    return {"ok": True}
+
+@app.delete("/api/key-slots/{slot_id}")
+def api_delete_key_slot(slot_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    supabase.table("key_slots").delete().eq("id", slot_id).eq("owner_email", session["email"]).execute()
+    return {"ok": True}
+
+@app.post("/api/key-slots/{slot_id}/assign")
+def api_assign_key_slot(slot_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    # Привязываем ключи слота ко всем анкетам без ключей
+    slot_res = supabase.table("key_slots").select("*").eq("id", slot_id).eq("owner_email", session["email"]).execute()
+    if not slot_res.data:
+        raise HTTPException(status_code=404, detail="Слот не найден")
+    slot = slot_res.data[0]
+    keys = [k.strip() for k in (slot["keys"] or "").splitlines() if k.strip()]
+    if not keys:
+        raise HTTPException(status_code=400, detail="Слот пустой")
+    # Находим анкеты без ключей
+    accounts_res = supabase.table("accounts").select("id").eq("owner_email", session["email"]).execute()
+    accounts = accounts_res.data or []
+    assigned = 0
+    for i, account in enumerate(accounts):
+        key = keys[i % len(keys)]
+        existing = supabase.table("ai_settings").select("account_id").eq("account_id", account["id"]).execute()
+        if existing.data:
+            supabase.table("ai_settings").update({"groq_api_keys": key}).eq("account_id", account["id"]).execute()
+        else:
+            supabase.table("ai_settings").insert({"account_id": account["id"], "groq_api_keys": key}).execute()
+        assigned += 1
+    return {"ok": True, "assigned": assigned}
 
 # ── Health ────────────────────────────────────────────────
 
