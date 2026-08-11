@@ -1398,6 +1398,15 @@ def api_update_key_slot(slot_id: str, payload: KeySlotPayload, authorization: st
     }).eq("id", slot_id).eq("owner_email", session["email"]).execute()
     return {"ok": True}
 
+@app.post("/api/key-slots/release/{account_id}")
+def api_release_key_slot(account_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    # Находим слот привязанный к этой анкете и освобождаем его
+    res = supabase.table("key_slots").select("*").eq("account_id", account_id).eq("owner_email", session["email"]).execute()
+    if res.data:
+        supabase.table("key_slots").update({"account_id": None}).eq("id", res.data[0]["id"]).execute()
+    return {"ok": True}
+
 @app.delete("/api/key-slots/{slot_id}")
 def api_delete_key_slot(slot_id: str, authorization: str | None = Header(default=None)):
     session = require_auth(authorization)
@@ -1405,9 +1414,8 @@ def api_delete_key_slot(slot_id: str, authorization: str | None = Header(default
     return {"ok": True}
 
 @app.post("/api/key-slots/{slot_id}/assign")
-def api_assign_key_slot(slot_id: str, authorization: str | None = Header(default=None)):
+def api_assign_key_slot(slot_id: str, account_id: str = "", authorization: str | None = Header(default=None)):
     session = require_auth(authorization)
-    # Привязываем ключи слота ко всем анкетам без ключей
     slot_res = supabase.table("key_slots").select("*").eq("id", slot_id).eq("owner_email", session["email"]).execute()
     if not slot_res.data:
         raise HTTPException(status_code=404, detail="Слот не найден")
@@ -1415,19 +1423,17 @@ def api_assign_key_slot(slot_id: str, authorization: str | None = Header(default
     keys = [k.strip() for k in (slot["keys"] or "").splitlines() if k.strip()]
     if not keys:
         raise HTTPException(status_code=400, detail="Слот пустой")
-    # Находим анкеты без ключей
-    accounts_res = supabase.table("accounts").select("id").eq("owner_email", session["email"]).execute()
-    accounts = accounts_res.data or []
-    assigned = 0
-    for i, account in enumerate(accounts):
-        key = keys[i % len(keys)]
-        existing = supabase.table("ai_settings").select("account_id").eq("account_id", account["id"]).execute()
-        if existing.data:
-            supabase.table("ai_settings").update({"groq_api_keys": key}).eq("account_id", account["id"]).execute()
-        else:
-            supabase.table("ai_settings").insert({"account_id": account["id"], "groq_api_keys": key}).execute()
-        assigned += 1
-    return {"ok": True, "assigned": assigned}
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id не передан")
+    # Применяем все ключи к ai_settings анкеты
+    existing = supabase.table("ai_settings").select("account_id").eq("account_id", account_id).execute()
+    if existing.data:
+        supabase.table("ai_settings").update({"groq_api_keys": "\n".join(keys)}).eq("account_id", account_id).execute()
+    else:
+        supabase.table("ai_settings").insert({"account_id": account_id, "groq_api_keys": "\n".join(keys)}).execute()
+    # Привязываем слот к анкете
+    supabase.table("key_slots").update({"account_id": account_id}).eq("id", slot_id).execute()
+    return {"ok": True, "assigned": 1}
 
 # ── Health ────────────────────────────────────────────────
 
