@@ -207,7 +207,7 @@
 
       <!-- ── ГЛАВНАЯ ── -->
       <section class="page activePage" id="homePage" style="display:flex;flex-direction:column;height:100%;">
-        <div class="platformBtns" id="platformBtnsRow">
+        <div class="platformBtns" id="platformBtnsRow" style="position:relative;z-index:10;">
           <button class="platformBtn active" data-platform="Mamba">Mamba</button>
           <button class="platformBtn" data-platform="Twinby">Twinby</button>
           <button class="platformBtn" data-platform="Vznakomstve">Взнакомстве</button>
@@ -221,7 +221,7 @@
         <section class="homeLayout" style="display:flex;flex-direction:column;flex:1;min-height:0;">
 
           <!-- Форма подключения -->
-          <form class="panel connectPanel" id="connectForm">
+          <form class="panel connectPanel" id="connectForm" style="position:relative;z-index:10;">
             <div class="panelHead connectToggle" id="connectToggle">
               <h2>Подключить анкету</h2>
               <span class="connectArrow">▼</span>
@@ -280,7 +280,7 @@
           </form>
 
           <!-- Infinite canvas -->
-          <div id="canvasWrapper" style="position:fixed;top:100px;left:140px;right:0;bottom:0;overflow:visible;background:var(--bg);">
+          <div id="canvasWrapper" style="position:absolute;top:0;left:0;right:0;bottom:0;overflow:visible;background:var(--bg);">
             <canvas id="webCanvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
             <div id="accountsList" style="position:absolute;top:0;left:0;right:0;bottom:0;transform-origin:0 0;overflow:visible;">
               <div class="gridEmpty" id="gridEmpty" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
