@@ -2277,6 +2277,8 @@ async function autoAssignKeysToAccount(accountId) {
   await fetch(WORKER_API + `/api/key-slots/${freeSlot.id}/assign`, {
     method: "POST",
   });
+  loadKeySlots();
+}
 
 function placeGroupOnCanvas(group, accountId) {
   const saved = canvasPositions[accountId];
