@@ -1815,7 +1815,7 @@ function openPage(pageName) {
   const activePage = document.getElementById(`${pageName}Page`);
   if (activePage) {
     activePage.classList.add("activePage");
-    activePage.style.display = pageName === "tables" ? "flex" : "block";
+    activePage.style.display = pageName === "tables" || pageName === "home" ? "flex" : "block";
     const appEl = document.querySelector(".app");
     if (pageName === "tables") {
       if (appEl) {
