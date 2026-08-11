@@ -3335,6 +3335,7 @@ async function runOneLikesStep(accountId, limit, resultEl, round) {
 
     if (likesData.blocked || status === "profile_blocked") {
       pushLog(accountId, "БЛОК — запускаю резерв");
+      await loadAccounts();
       return {
         blocked: true,
         reserve_account_id:
@@ -3412,6 +3413,7 @@ async function runOneChatsStep(accountId, resultEl, round, passLabel) {
 
     if (groqData.blocked || groqStatus === "profile_blocked") {
       pushLog(accountId, "БЛОК в чатах — запускаю резерв");
+      await loadAccounts();
       return {
         blocked: true,
         reserve_account_id:
