@@ -937,13 +937,18 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     owner_emails = get_team_owner_emails(session["email"])
     accounts_res = supabase.table("accounts").select("id").in_("owner_email", owner_emails).execute()
     account_ids = [a["id"] for a in (accounts_res.data or []) if a.get("id")]
-    if not account_ids:
-        return {"ok": True, "cards": []}
-    cards_res = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
-    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute()
+    cards_res = supabase.table("analytics_cards").select("*").execute()
+    null_cards = [c for c in (cards_res.data or []) if c.get("account_id") is None]
+    if account_ids:
+        account_cards = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
+        all_cards = (account_cards.data or []) + null_cards
+    else:
+        all_cards = null_cards
+    cards_res_data = all_cards
+    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute() if account_ids else type('obj', (object,), {'data': []})()
     settings_by_account = {s.get("account_id"): s for s in (settings_res.data or [])}
     result = []
-    for card in (cards_res.data or []):
+    for card in cards_res_data:
         account_id = card.get("account_id", "")
         settings = settings_by_account.get(account_id) or {}
         result.append({
