@@ -1564,7 +1564,7 @@ function initInfiniteCanvas() {
 
   function applyTransform() {
     container.style.transform = `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`;
-    drawWeb();
+    if (window._clawDrawWeb) window._clawDrawWeb(); else drawWeb();
   }
 
   function drawWeb() {
@@ -1652,6 +1652,9 @@ function initInfiniteCanvas() {
 
   // Zoom — колесо мыши
   document.addEventListener("wheel", (e) => {
+    const homePage = document.getElementById("homePage");
+    if (!homePage || !homePage.classList.contains("activePage")) return;
+    if (!e.target.closest("#canvasWrapper")) return;
     e.preventDefault();
     const rect = wrapper.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -2148,16 +2151,30 @@ function renderTimerCard(card) {
   const startBtn = group.querySelector(".sqTimerStartBtn");
   const statusEl = group.querySelector(".sqTimerStatus");
 
+  // Восстанавливаем состояние после перезагрузки
+  if (card.watching) {
+    card._watching = true;
+    startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
+    startBtn.style.background = "rgba(251,191,36,0.2)";
+    startBtn.style.borderColor = "rgba(251,191,36,0.8)";
+    statusEl.textContent = "Слежу за сплитом...";
+    watchTimerCard(card, statusEl, startBtn);
+  }
+
   startBtn.onclick = () => {
     if (card._watching) {
       card._watching = false;
+      card.watching = false;
       stopTimerCard(card.id);
+      saveTimerCards();
       startBtn.innerHTML = "▶ ВКЛЮЧИТЬ";
       startBtn.style.background = "rgba(251,191,36,0.1)";
       startBtn.style.borderColor = "rgba(251,191,36,0.4)";
       statusEl.textContent = "Выключен";
     } else {
       card._watching = true;
+      card.watching = true;
+      saveTimerCards();
       startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
       startBtn.style.background = "rgba(251,191,36,0.2)";
       startBtn.style.borderColor = "rgba(251,191,36,0.8)";
@@ -2189,77 +2206,76 @@ function watchTimerCard(card, statusEl, startBtn) {
 
   if (workMs === 0) { statusEl.textContent = "Укажи время работы"; card._watching = false; return; }
 
-  function getLinkedAccountId() {
+  function getLinkedAccountIds() {
     const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
-    const conn = conns.find(c => c.from === card.id || c.to === card.id);
-    if (!conn) return null;
-    return conn.from === card.id ? conn.to : conn.from;
+    return conns
+      .filter(c => c.from === card.id || c.to === card.id)
+      .map(c => c.from === card.id ? c.to : c.from)
+      .filter(id => !id.startsWith("ai_") && !id.startsWith("timer_"));
   }
 
-  // Ждём пока сплит запустится на анкете
   function waitForSplit() {
     if (!card._watching) return;
-    const accountId = getLinkedAccountId();
-    if (!accountId) {
+    const accountIds = getLinkedAccountIds();
+    if (!accountIds.length) {
       statusEl.textContent = "⚠ Привяжи анкету ниткой";
       _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
       return;
     }
-    // Проверяем запущен ли сплит
-    if (runningSplits.has(accountId)) {
-      statusEl.textContent = "▶ Сплит обнаружен, запускаю отсчёт...";
-      startWorkCountdown(accountId);
+    const running = accountIds.filter(id => runningSplits.has(id));
+    if (running.length) {
+      statusEl.textContent = `▶ Сплит обнаружен (${running.length}), запускаю отсчёт...`;
+      startWorkCountdown(accountIds);
     } else {
-      statusEl.textContent = "Слежу... (жду запуска сплита)";
+      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
       _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
     }
   }
 
-  function startWorkCountdown(accountId) {
+  function startWorkCountdown(accountIds) {
     let remaining = workMs;
     const tick = () => {
       if (!card._watching) return;
       remaining -= 1000;
       const m = Math.floor(remaining / 60000);
       const s = Math.floor((remaining % 60000) / 1000);
-      statusEl.textContent = `▶ Работает: ${m}м ${s}с`;
+      statusEl.textContent = `▶ Работает: ${m}м ${s}с (${accountIds.length} анкет)`;
       if (remaining > 0) {
         _timerIntervals[card.id] = setTimeout(tick, 1000);
       } else {
-        stopSplitAndPause(accountId);
+        stopSplitAndPause(accountIds);
       }
     };
     _timerIntervals[card.id] = setTimeout(tick, 1000);
   }
 
-  async function stopSplitAndPause(accountId) {
+  async function stopSplitAndPause(accountIds) {
     if (!card._watching) return;
-    statusEl.textContent = "⏸ Останавливаю сплит...";
-    try {
-      // Сначала жмём кнопку стоп — она сама остановит сплит
-      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
-      if (splitBtn) {
-        splitBtn.click();
-        await new Promise(r => setTimeout(r, 500));
-      }
-      await fetch(WORKER_API + "/api/tasks/stop", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_id: accountId }),
-      });
-      await setAccountRunStatus(accountId, "idle", "", "");
-      runningSplits.delete(accountId);
-    } catch {}
+    statusEl.textContent = "⏸ Останавливаю сплиты...";
+    for (const accountId of accountIds) {
+      try {
+        const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+        if (splitBtn) {
+          splitBtn.click();
+          await new Promise(r => setTimeout(r, 300));
+        }
+        await fetch(WORKER_API + "/api/tasks/stop", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: accountId }),
+        });
+        await setAccountRunStatus(accountId, "idle", "", "");
+        runningSplits.delete(accountId);
+      } catch {}
+    }
 
     if (!card._watching) return;
 
     if (pauseMs === 0) {
-      // Без паузы — сразу ждём нового запуска
-      statusEl.textContent = "Слежу... (жду запуска сплита)";
+      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
       _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
       return;
     }
 
-    // Отсчёт паузы
     let remaining = pauseMs;
     const tick = () => {
       if (!card._watching) return;
@@ -2270,24 +2286,26 @@ function watchTimerCard(card, statusEl, startBtn) {
       if (remaining > 0) {
         _timerIntervals[card.id] = setTimeout(tick, 1000);
       } else {
-        // Перезапускаем сплит
-        restartSplit(accountId);
+        restartSplits(accountIds);
       }
     };
     _timerIntervals[card.id] = setTimeout(tick, 1000);
   }
 
-  async function restartSplit(accountId) {
+  async function restartSplits(accountIds) {
     if (!card._watching) return;
-    statusEl.textContent = "▶ Перезапускаю сплит...";
-    try {
-      const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
-      if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
-    } catch {}
-    // Ждём пока сплит запустится и снова начинаем отсчёт
+    statusEl.textContent = `▶ Перезапускаю ${accountIds.length} сплитов...`;
+    for (const accountId of accountIds) {
+      try {
+        const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+        if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
+        await new Promise(r => setTimeout(r, 300));
+      } catch {}
+    }
     _timerIntervals[card.id] = setTimeout(() => {
-      if (runningSplits.has(accountId)) {
-        startWorkCountdown(accountId);
+      const currentIds = getLinkedAccountIds();
+      if (currentIds.some(id => runningSplits.has(id))) {
+        startWorkCountdown(currentIds);
       } else {
         waitForSplit();
       }
@@ -2295,7 +2313,6 @@ function watchTimerCard(card, statusEl, startBtn) {
   }
 
   waitForSplit();
-}
 
 function renderTimerCardsOnCanvas() {
   loadTimerCards();
