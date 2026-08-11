@@ -884,7 +884,7 @@
     </div>
     <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;overscroll-behavior:contain;">
       <label>Анкета
-        <select id="aModalAccountSelect" class="aiSelect" style="margin-top:6px;"></select>
+        <select id="aModalAccountSelect"
       </label>
       <label style="display:none;">Groq API ключи (каждый на новой строке)
         <textarea id="aModalGroqKey" 
@@ -892,10 +892,10 @@
           rows="4"
           style="min-height:80px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);"></textarea>
       </label>
-      <label>Модель
-        <input id="aModalGroqModel" value="llama-3.3-70b-versatile" />
+      <label style="display:none;">Модель
+        <input id="aModalGroqModel"
       </label>
-      <label>OpenRouter API ключ (fallback)
+      <label style="display:none;">OpenRouter API ключ (fallback)
         <textarea id="aModalGeminiKeys" 
           placeholder="sk-or-v1-..." 
           rows="2"
@@ -931,7 +931,7 @@
       <label>Условие отдачи контактов
         <input id="aModalContactsTrigger" placeholder="Если человек просит..." />
       </label>
-      <label>Telegram chat_id для уведомлений
+      <label style="display:none;">Telegram chat_id для уведомлений
         <input id="aModalTgChatId" placeholder="Например: 123456789" />
       </label>
       <button class="taskRunBtn" id="aModalSaveBtn" style="margin-top:16px;">Сохранить</button>
