@@ -2379,28 +2379,7 @@ async function openAnalyticsModal(accountId, accounts) {
   document.getElementById("aModalContacts").value        = card.contacts || "";
   document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
 
-  // Подтягиваем groq-настройки (включая tg_chat_id) отдельно, так как они хранятся в ai_settings
-  if (card.accountId) {
-    try {
-      const res = await fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(card.accountId)}`);
-      const data = await res.json();
-      if (data.settings) {
-        document.getElementById("aModalGroqModel").value = data.settings.groq_model || "llama-3.3-70b-versatile";
-        document.getElementById("aModalTgChatId").value  = data.settings.tg_chat_id || "";
-      }
-    } catch (err) {
-      console.error("load ai-settings for modal error:", err);
-    }
-  }
-
-  const sel = document.getElementById("aModalAccountSelect");
-  sel.innerHTML = '<option value="">— выбери анкету —</option>';
-  accounts.forEach(a => {
-    const o = document.createElement("option");
-    o.value = a.id; o.textContent = a.name || a.id;
-    sel.appendChild(o);
-  });
-  if (card.accountId) sel.value = card.accountId;
+  // ничего
 
   document.getElementById("analyticsModal").classList.add("open");
 }
