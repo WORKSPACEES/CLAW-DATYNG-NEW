@@ -1911,111 +1911,170 @@ function initInfiniteCanvas() {
       const isActive = (fromAccountId && runningSplits.has(fromAccountId)) || (toAccountId && runningSplits.has(toAccountId));
 
       if (isActive) {
-        // ── АКТИВНАЯ нитка: светящийся поток ──
+        // ── АКТИВНАЯ нитка: плазменная дуга ──
 
-        // Базовый слой — тёмный кабель
+        // Пульсация яркости
+        const pulse = 0.75 + 0.25 * Math.sin(now * 0.004);
+
+        // Широкий внешний ореол
         ctx.beginPath();
         ctx.moveTo(fx, fy);
         ctx.lineTo(tx, ty);
-        ctx.strokeStyle = "rgba(0,255,180,0.12)";
-        ctx.lineWidth = 6;
+        ctx.strokeStyle = `rgba(16,245,168,${0.06 * pulse})`;
+        ctx.lineWidth = 20;
         ctx.lineCap = "round";
         ctx.shadowBlur = 0;
         ctx.stroke();
 
-        // Средний слой — свечение
+        // Средний слой
         ctx.beginPath();
         ctx.moveTo(fx, fy);
         ctx.lineTo(tx, ty);
-        ctx.strokeStyle = "rgba(16,245,168,0.35)";
+        ctx.strokeStyle = `rgba(16,245,168,${0.2 * pulse})`;
+        ctx.lineWidth = 8;
+        ctx.shadowColor = "#10f5a8";
+        ctx.shadowBlur = 15;
+        ctx.stroke();
+
+        // Тело кабеля — тёмное
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(0,30,20,0.8)";
         ctx.lineWidth = 3;
-        ctx.shadowColor = "#10f5a8";
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 0;
         ctx.stroke();
 
-        // Тонкая яркая нитка поверх
+        // Плазменное ядро
         ctx.beginPath();
         ctx.moveTo(fx, fy);
         ctx.lineTo(tx, ty);
-        ctx.strokeStyle = "rgba(16,245,168,0.9)";
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = `rgba(255,255,255,${0.85 * pulse})`;
+        ctx.lineWidth = 1;
         ctx.shadowColor = "#10f5a8";
-        ctx.shadowBlur = 20;
+        ctx.shadowBlur = 25;
         ctx.stroke();
-
         ctx.shadowBlur = 0;
 
-        // Бегущие частицы по нитке
-        const speed = 0.00025;
-        const particleCount = Math.max(2, Math.floor(len / 80));
+        // Бегущие частицы — быстрые искры
+        const speed = 0.0004;
+        const particleCount = Math.max(3, Math.floor(len / 60));
         for (let p = 0; p < particleCount; p++) {
-          const offset = (p / particleCount);
-          const t = ((now * speed + offset) % 1);
+          const t = ((now * speed + p / particleCount) % 1);
           const px = fx + dx * t;
           const py = fy + dy * t;
 
-          // Хвост частицы
-          const tailLen = 0.12;
+          // Длинный хвост
+          const tailLen = 0.18;
           const t0 = Math.max(0, t - tailLen);
           const tailX = fx + dx * t0;
           const tailY = fy + dy * t0;
 
           const grad = ctx.createLinearGradient(tailX, tailY, px, py);
           grad.addColorStop(0, "rgba(16,245,168,0)");
-          grad.addColorStop(1, "rgba(255,255,255,0.95)");
+          grad.addColorStop(0.5, "rgba(16,245,168,0.4)");
+          grad.addColorStop(1, "rgba(255,255,255,1)");
 
           ctx.beginPath();
           ctx.moveTo(tailX, tailY);
           ctx.lineTo(px, py);
           ctx.strokeStyle = grad;
-          ctx.lineWidth = 2.5;
+          ctx.lineWidth = 3;
           ctx.shadowColor = "#ffffff";
-          ctx.shadowBlur = 16;
+          ctx.shadowBlur = 20;
           ctx.stroke();
           ctx.shadowBlur = 0;
 
-          // Точка-голова частицы
+          // Яркая голова
           ctx.beginPath();
-          ctx.arc(px, py, 3, 0, Math.PI * 2);
+          ctx.arc(px, py, 2.5, 0, Math.PI * 2);
           ctx.fillStyle = "#ffffff";
           ctx.shadowColor = "#10f5a8";
-          ctx.shadowBlur = 20;
+          ctx.shadowBlur = 25;
           ctx.fill();
           ctx.shadowBlur = 0;
         }
 
-      } else {
-        // ── НЕАКТИВНАЯ нитка: стильная статичная ──
-
-        // Внешнее мягкое свечение
-        ctx.beginPath();
-        ctx.moveTo(fx, fy);
-        ctx.lineTo(tx, ty);
-        ctx.strokeStyle = "rgba(92,110,248,0.08)";
-        ctx.lineWidth = 8;
-        ctx.lineCap = "round";
-        ctx.stroke();
-
-        // Основная линия с пунктиром
-        ctx.beginPath();
-        ctx.moveTo(fx, fy);
-        ctx.lineTo(tx, ty);
-        ctx.setLineDash([8, 6]);
-        ctx.strokeStyle = "rgba(130,148,255,0.5)";
-        ctx.lineWidth = 1.5;
-        ctx.shadowColor = "#818cf8";
-        ctx.shadowBlur = 6;
-        ctx.stroke();
-        ctx.setLineDash([]);
+        // Терминалы — светящиеся коннекторы
+        [[fx, fy], [tx, ty]].forEach(([cx, cy]) => {
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(16,245,168,${0.8 * pulse})`;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = "#10f5a8";
+          ctx.shadowBlur = 20;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = "#10f5a8";
+          ctx.shadowBlur = 15;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
         ctx.shadowBlur = 0;
 
-        // Точки на концах
-        [{ x: fx, y: fy }, { x: tx, y: ty }].forEach(pt => {
+        } else {
+        // ── НЕАКТИВНАЯ нитка: кабель под напряжением ──
+
+        // Внешний ореол — широкий размытый
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(99,102,241,0.06)";
+        ctx.lineWidth = 14;
+        ctx.lineCap = "round";
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Средний слой — тело кабеля
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(30,27,75,0.9)";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Внутреннее свечение — тонкое и яркое
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(139,92,246,0.7)";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "#7c3aed";
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Блики — имитация стеклянного провода
+        const perpX = -(dy / len) * 1.2;
+        const perpY = (dx / len) * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(fx + perpX, fy + perpY);
+        ctx.lineTo(tx + perpX, ty + perpY);
+        ctx.strokeStyle = "rgba(196,181,253,0.25)";
+        ctx.lineWidth = 0.8;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Терминалы на концах — металлические коннекторы
+        [[fx, fy], [tx, ty]].forEach(([cx, cy]) => {
+          // Внешнее кольцо
           ctx.beginPath();
-          ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(130,148,255,0.6)";
-          ctx.shadowColor = "#818cf8";
-          ctx.shadowBlur = 10;
+          ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(139,92,246,0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = "#7c3aed";
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          // Внутренний кружок
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(167,139,250,0.9)";
+          ctx.shadowColor = "#a78bfa";
+          ctx.shadowBlur = 8;
           ctx.fill();
           ctx.shadowBlur = 0;
         });
