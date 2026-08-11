@@ -2202,7 +2202,10 @@ function renderKeySlots() {
           <button class="slotDeleteBtn" data-id="${slot.id}" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:13px;">✕</button>
         </div>
       </div>
-      <div style="font:400 11px 'Space Grotesk',sans-serif;color:var(--text2);">${keyCount} ключ${keyCount === 1 ? "" : keyCount < 5 ? "а" : "ей"}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px;">
+        <span style="font:400 11px 'Space Grotesk',sans-serif;color:var(--text2);">${keyCount} ключ${keyCount === 1 ? "" : keyCount < 5 ? "а" : "ей"}</span>
+        ${slot.account_id ? `<span style="font:400 11px 'Space Grotesk',sans-serif;color:var(--cyan);">${(cachedAccounts.find(a => a.id === slot.account_id) || {}).name || "Анкета"}</span>` : ""}
+      </div>
     `;
     el.querySelector(".slotEditBtn").onclick = () => openKeySlotModal(slot);
     el.querySelector(".slotDeleteBtn").onclick = async () => {
@@ -2275,7 +2278,7 @@ async function autoAssignKeysToAccount(accountId) {
     body: JSON.stringify({ groq_api_keys: keys.join("\n") }),
   });
   // Привязываем слот к анкете
-  await fetch(WORKER_API + `/api/key-slots/${freeSlot.id}/assign`, {
+  await fetch(WORKER_API + `/api/key-slots/${freeSlot.id}/assign?account_id=${encodeURIComponent(accountId)}`, {
     method: "POST",
   });
   loadKeySlots();
@@ -2951,7 +2954,11 @@ form.addEventListener("submit", async (event) => {
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.detail || data.error || "Ошибка подключения");
       succeeded++;
-      j.slotEl.style.opacity = "0.4";
+          j.slotEl.style.opacity = "0.4";
+          // Применяем ключи к новой анкете
+          if (data.account && data.account.id) {
+            await autoAssignKeysToAccount(data.account.id);
+          }
     } catch (error) {
       failed++;
       j.slotEl.style.borderColor = "rgba(255,60,60,.6)";
@@ -3468,6 +3475,8 @@ async function runOneLikesStep(accountId, limit, resultEl, round) {
     if (likesData.blocked || status === "profile_blocked") {
       pushLog(accountId, "БЛОК — запускаю резерв");
       await loadAccounts();
+      renderSquareGridFromCache();
+      fetch(WORKER_API + `/api/key-slots/release/${accountId}`, { method: "POST" }).catch(() => {});
       return {
         blocked: true,
         reserve_account_id:
@@ -3547,6 +3556,7 @@ async function runOneChatsStep(accountId, resultEl, round, passLabel) {
       pushLog(accountId, "БЛОК в чатах — запускаю резерв");
       await loadAccounts();
       renderSquareGridFromCache();
+      fetch(WORKER_API + `/api/key-slots/release/${accountId}`, { method: "POST" }).catch(() => {});
       return {
         blocked: true,
         reserve_account_id:
