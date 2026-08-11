@@ -1697,7 +1697,7 @@ function placeGroupOnCanvas(group, accountId) {
     const idx = document.getElementById("accountsList").querySelectorAll(".sqGroup").length;
     const angle = idx * 2.4;
     const radius = 60 + idx * 55;
-    const cx = 400, cy = 300;
+    const cx = 50, cy = 50;
     const x = cx + Math.cos(angle) * radius;
     const y = cy + Math.sin(angle) * radius;
     group.style.left = x + "px";
