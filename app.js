@@ -1714,13 +1714,92 @@ function initInfiniteCanvas() {
     }
     window.addEventListener("mousemove", move);
     window.addEventListener("mouseup", up);
+    });
+
+  // Drag нитки от sqConnectDot
+  let drawingLine = false;
+  let lineFromId = null;
+  let lineEndX = 0, lineEndY = 0;
+
+  container.addEventListener("mousedown", (e) => {
+    const dot = e.target.closest(".sqConnectDot");
+    if (!dot) return;
+    e.stopPropagation();
+    e.preventDefault();
+    drawingLine = true;
+    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup") || dot.closest(".sqTimerGroup");
+    lineFromId = group?.dataset.accountId;
+    const rect = wrapper.getBoundingClientRect();
+    lineEndX = e.clientX - rect.left;
+    lineEndY = e.clientY - rect.top;
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!drawingLine) return;
+    const rect = wrapper.getBoundingClientRect();
+    lineEndX = e.clientX - rect.left;
+    lineEndY = e.clientY - rect.top;
+    drawConnections();
+    const ctx = canvas.getContext("2d");
+    const fromEl = container.querySelector(`[data-account-id="${lineFromId}"]`);
+    if (!fromEl) return;
+    const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+    const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+    ctx.strokeStyle = "rgba(16,245,168,0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(lineEndX, lineEndY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  window.addEventListener("mouseup", (e) => {
+    if (!drawingLine) return;
+    drawingLine = false;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup") || target?.closest(".sqTimerGroup");
+    const toId = toGroup?.dataset.accountId;
+    if (toId && toId !== lineFromId) {
+      const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
+      if (!exists) {
+        connections.push({ from: lineFromId, to: toId });
+        saveConnections();
+        const aiId = lineFromId.startsWith("ai_") ? lineFromId : toId.startsWith("ai_") ? toId : null;
+        const accountId = lineFromId.startsWith("ai_") ? toId : toId.startsWith("ai_") ? lineFromId : null;
+        if (aiId && accountId && !accountId.startsWith("ai_") && !accountId.startsWith("timer_")) {
+          const cardId = aiId.replace("ai_", "");
+          const aiCard = analyticsCards.find(c => c.cardId === cardId);
+          if (aiCard) {
+            aiCard.accountId = accountId;
+            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ account_id: accountId }),
+            }).catch(() => {});
+            fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(accountId)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                bot_name: aiCard.botName || "",
+                bot_age: aiCard.botAge || "",
+                bot_gender: aiCard.botGender || "female",
+                location: aiCard.location || "",
+                contacts: aiCard.contacts || "",
+                contacts_trigger: aiCard.contactsTrigger || "",
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+    drawConnections();
   });
 
   window.addEventListener("resize", () => {
     drawWeb();
   });
-
-  applyTransform();
 
   // Контекстное меню по правой кнопке
   const ctxMenu = document.createElement("div");
