@@ -4202,16 +4202,25 @@ function initSheetApp(container) {
     if (e.key === "Delete" || e.key === "Backspace") {
       const r1=Math.min(sel.r,sel.r2), r2=Math.max(sel.r,sel.r2);
       const c1=Math.min(sel.c,sel.c2), c2=Math.max(sel.c,sel.c2);
+      const deletedCells = [];
       for (let r=r1;r<=r2;r++) for(let c=c1;c<=c2;c++) {
-        sh().cells[ck(r,c)] = "";
+        if (sh().cells[ck(r,c)]) deletedCells.push({ row: r, col: c, value: null });
+        delete sh().cells[ck(r,c)];
       }
       saveState();
-      for (let r=r1;r<=r2;r++) for(let c=c1;c<=c2;c++) delete sh().cells[ck(r,c)];
+      if (deletedCells.length) {
+        fetch("/api/sheet/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sheet_id: sh().id, cells: deletedCells }),
+        }).catch(() => {});
+      }
       render(); updateFormulaBar(); return;
     }
     if (e.key === "F2") { startEditByKey(); return; }
     // начать вводить символ
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
       startEditByKeyChar(e.key);
     }
   });
@@ -4240,7 +4249,7 @@ function initSheetApp(container) {
     editInput.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:${cw(sel.c)}px;height:${rh(sel.r)}px;background:#0e1230;color:#e8ecff;border:2px solid #818cf8;outline:none;font:12px 'JetBrains Mono',monospace;padding:0 4px;box-sizing:border-box;z-index:10;`;
     scroll.appendChild(editInput);
     editInput.focus();
-    editInput.setSelectionRange(1, 1);
+    editInput.setSelectionRange(editInput.value.length, editInput.value.length);
     editInput.addEventListener("keydown", e => {
       if (e.key === "Enter")  { commitEdit(); moveDown(); }
       if (e.key === "Tab")    { e.preventDefault(); commitEdit(); moveRight(); }
