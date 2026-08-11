@@ -1357,27 +1357,10 @@ if (isIntCityCard && intCityFields) {
           });
         } catch {}
         await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
-        await loadAccounts();
       } catch (err) {
         alert("Не удалось удалить: " + err.message);
       }
     };
-  };
-    try {
-      // Останавливаем сплит если запущен
-      runningSplits.delete(account.id);
-      try {
-        await fetch(WORKER_API + "/api/tasks/stop", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: account.id }),
-        });
-      } catch {}
-      await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
-      await loadAccounts();а node.querySelector(".deleteBtn").onclick  = async () => {
-    } catch (err) {
-      alert("Не удалось удалить: " + err.message);
-    }
   };
 
   return node;
@@ -1618,13 +1601,7 @@ function renderSquareGrid(accounts, statsMap) {
   });
 
   return; // дальше старый код не нужен
-
-  const empty = document.getElementById("gridEmpty");
-  const intCityPanel = document.getElementById("intCityPanel");
-
-  if (intCityPanel) intCityPanel.style.display = "none";
-  if (accountsList) accountsList.style.display = "";
-
+}
 
 function renderAiAccountOptions(accounts) {
   // старой формы AI больше нет — ничего не делаем
