@@ -1639,7 +1639,7 @@ function initInfiniteCanvas() {
       dragGroup.style.top = y + "px";
       const id = dragGroup.dataset.accountId || `ai_${dragGroup.dataset.cardId}`;
       if (id) canvasPositions[id] = { x, y };
-      drawWeb();
+      if (window._clawDrawWeb) window._clawDrawWeb(); else drawWeb();
     }
   });
 
@@ -1699,6 +1699,7 @@ function initInfiniteCanvas() {
       group.style.top = y + "px";
       const cardId = group.dataset.cardId;
       if (cardId) canvasPositions[`ai_${cardId}`] = { x, y };
+      if (window._clawDrawWeb) window._clawDrawWeb();
     }
     function up() {
       group.style.zIndex = "";
@@ -1793,8 +1794,8 @@ function initInfiniteCanvas() {
       const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
       const tx = (parseFloat(toEl.style.left||0) + toEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
       const ty = (parseFloat(toEl.style.top||0) + toEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
-      ctx.strokeStyle = "rgba(16,245,168,0.6)";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(16,245,168,1)";
+      ctx.lineWidth = 2.5;
       ctx.setLineDash([6,4]);
       ctx.beginPath();
       ctx.moveTo(fx, fy);
