@@ -1982,13 +1982,9 @@ function renderAICardsOnCanvas() {
   const container = document.getElementById("accountsList");
   if (!container) return;
 
-  // Удаляем старые AI карточки
   container.querySelectorAll(".sqAIGroup").forEach(el => el.remove());
 
   analyticsCards.forEach(card => {
-    const existing = container.querySelector(`.sqAIGroup[data-card-id="${card.cardId}"]`);
-    if (existing) return;
-
     const group = document.createElement("div");
     group.className = "sqAIGroup";
     group.dataset.cardId = card.cardId;
@@ -1997,17 +1993,40 @@ function renderAICardsOnCanvas() {
 
     const aCard = document.createElement("div");
     aCard.className = "sqAnalyticsCard";
-    aCard.style.cssText = "min-width:160px;cursor:grab;";
+    aCard.style.cssText = "min-width:160px;cursor:grab;position:relative;";
     aCard.innerHTML = `
+      <button class="sqAIDeleteBtn" data-card-id="${card.cardId}" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;line-height:1;opacity:0.6;">✕</button>
+      <button class="sqAIEditBtn" data-card-id="${card.cardId}" style="position:absolute;top:6px;right:26px;background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:12px;line-height:1;opacity:0.6;">✎</button>
       <div class="sqACardHead">AI</div>
       <div class="sqACardName">${card.botName ? `${card.botName}, ${card.botAge}` : "Аналитик"}</div>
       <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${card.contacts || "—"}</span></div>
-      <div class="sqACardRow"><span class="sqALabel">Стиль</span><span class="sqAVal">${card.persona || "—"}</span></div>
-      <div class="sqACardRow"><span class="sqALabel">Цель</span><span class="sqAVal">${card.goal || "—"}</span></div>
     `;
+
+    aCard.querySelector(".sqAIDeleteBtn").onclick = async (e) => {
+      e.stopPropagation();
+      group.remove();
+      analyticsCards = analyticsCards.filter(c => c.cardId !== card.cardId);
+      try {
+        await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(card.cardId)}`, { method: "DELETE" });
+      } catch {}
+    };
+
+    aCard.querySelector(".sqAIEditBtn").onclick = (e) => {
+      e.stopPropagation();
+      document.getElementById("aModalBotName").value = card.botName || "";
+      document.getElementById("aModalBotAge").value = card.botAge || "";
+      document.getElementById("aModalBotGender").value = card.botGender || "female";
+      document.getElementById("aModalLocation").value = card.location || "";
+      document.getElementById("aModalContacts").value = card.contacts || "";
+      document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
+      document.getElementById("aModalSaveBtn").dataset.editCardId = card.cardId;
+      document.getElementById("analyticsModal").classList.add("open");
+    };
+
     group.appendChild(aCard);
 
-    // Позиция
+    group.appendChild(aCard);
+
     const saved = canvasPositions[`ai_${card.cardId}`];
     if (saved) {
       group.style.left = saved.x + "px";
@@ -2401,7 +2420,7 @@ document.getElementById("analyticsModal")?.addEventListener("click", (e) => {
 
 document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => {
   const card = {
-    accountId:       "ai_" + Date.now(),
+    accountId:       document.getElementById("aModalSaveBtn").dataset.editCardId || "ai_" + Date.now(),
     groqKeys:        "",
     groqKey:         "",
     groqModel:       "llama-3.3-70b-versatile",
@@ -2418,26 +2437,31 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
     geminiKeys:      "",
   };
 
+  const editCardId = document.getElementById("aModalSaveBtn").dataset.editCardId;
   try {
-    const res = await fetch(WORKER_API + "/api/analytics-cards", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        account_id:       null,
-        bot_name:         card.botName,
-        bot_age:          card.botAge,
-        bot_gender:       card.botGender,
-        location:         card.location,
-        persona:          "",
-        goal:             "",
-        stop_topics:      "",
-        contacts:         card.contacts,
-        contacts_trigger: card.contactsTrigger,
-        tg_chat_id:       "",
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
-    card.cardId = data.card.id;
+    if (editCardId) {
+      // Обновление существующей
+      await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(editCardId)}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bot_name: card.botName, bot_age: card.botAge, bot_gender: card.botGender,
+          location: card.location, contacts: card.contacts, contacts_trigger: card.contactsTrigger,
+        }),
+      });
+    } else {
+      // Создание новой
+      const res = await fetch(WORKER_API + "/api/analytics-cards", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: null, bot_name: card.botName, bot_age: card.botAge,
+          bot_gender: card.botGender, location: card.location, persona: "",
+          goal: "", stop_topics: "", contacts: card.contacts,
+          contacts_trigger: card.contactsTrigger, tg_chat_id: "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
+    }
   } catch (err) {
     alert("Не удалось сохранить аналитика: " + err.message);
     return;
@@ -2446,6 +2470,7 @@ document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => 
   document.getElementById("analyticsModal").classList.remove("open");
   await loadAnalyticsCards();
   renderAICardsOnCanvas();
+  delete document.getElementById("aModalSaveBtn").dataset.editCardId;
 });
 
 // ── Модалки ───────────────────────────────────────────────
