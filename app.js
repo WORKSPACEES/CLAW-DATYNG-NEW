@@ -1662,16 +1662,52 @@ function initInfiniteCanvas() {
     applyTransform();
   }, { passive: false });
 
-  // Drag карточек
+  // Drag карточек (анкеты)
   container.addEventListener("mousedown", (e) => {
-    const group = e.target.closest(".sqGroup, .sqAIGroup");
+    const group = e.target.closest(".sqGroup");
     if (!group) return;
-    // Не начинаем drag если кликнули на кнопку/input
     if (e.target.closest("button, input, textarea, select, a")) return;
     e.preventDefault();
     isDragging = true;
     dragGroup = group;
+    const rect = wrapper.getBoundingClientRect();
+    const gx = parseFloat(group.style.left || 0);
+    const gy = parseFloat(group.style.top || 0);
+    dragOffsetX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale - gx;
+    dragOffsetY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale - gy;
+    group.style.zIndex = "100";
+    setTimeout(() => { if (dragGroup) dragGroup.style.zIndex = ""; }, 500);
   });
+
+  // Drag AI карточек
+  container.addEventListener("mousedown", (e) => {
+    const group = e.target.closest(".sqAIGroup");
+    if (!group) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = wrapper.getBoundingClientRect();
+    const gx = parseFloat(group.style.left || 0);
+    const gy = parseFloat(group.style.top || 0);
+    const ox = (e.clientX - rect.left) - gx;
+    const oy = (e.clientY - rect.top) - gy;
+    group.style.zIndex = "100";
+    function move(e) {
+      const x = (e.clientX - rect.left) - ox;
+      const y = (e.clientY - rect.top) - oy;
+      group.style.left = x + "px";
+      group.style.top = y + "px";
+      const cardId = group.dataset.cardId;
+      if (cardId) canvasPositions[`ai_${cardId}`] = { x, y };
+    }
+    function up() {
+      group.style.zIndex = "";
+      saveCanvasPositions();
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  }, true);
 
   window.addEventListener("resize", () => {
     drawWeb();
