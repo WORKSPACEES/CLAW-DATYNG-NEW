@@ -10,8 +10,6 @@
     .page { display: none; }
     .page.activePage { display: block; }
     #tablesPage.activePage { display: flex !important; flex-direction: column; }
-    #homePage.activePage { display: flex !important; flex-direction: column; }
-    #canvasWrapper { flex: 1; min-height: 300px; }
   </style>
 </head>
   <body>
@@ -206,8 +204,8 @@
     <main class="app" id="mainApp" style="display:none;">
 
       <!-- ── ГЛАВНАЯ ── -->
-      <section class="page activePage" id="homePage" style="display:flex;flex-direction:column;height:100%;">
-        <div class="platformBtns" id="platformBtnsRow" style="position:relative;z-index:10;">
+      <section class="page activePage" id="homePage">
+        <div class="platformBtns" id="platformBtnsRow">
           <button class="platformBtn active" data-platform="Mamba">Mamba</button>
           <button class="platformBtn" data-platform="Twinby">Twinby</button>
           <button class="platformBtn" data-platform="Vznakomstve">Взнакомстве</button>
@@ -218,10 +216,10 @@
           <span id="operatorTabsContainer" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
           <button class="platformBtn" id="addTabBtn" title="Добавить вкладку" style="width:36px;padding:7px 0;text-align:center;">+</button>
         </div>
-        <section class="homeLayout" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <section class="homeLayout">
 
           <!-- Форма подключения -->
-          <form class="panel connectPanel" id="connectForm" style="position:relative;z-index:10;">
+          <form class="panel connectPanel" id="connectForm">
             <div class="panelHead connectToggle" id="connectToggle">
               <h2>Подключить анкету</h2>
               <span class="connectArrow">▼</span>
@@ -279,23 +277,20 @@
             </template>
           </form>
 
-          <!-- Infinite canvas -->
-          <div id="canvasWrapper" style="position:absolute;top:0;left:0;right:0;bottom:0;overflow:visible;background:var(--bg);">
-            <canvas id="webCanvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
-            <div id="accountsList" style="position:absolute;top:0;left:0;right:0;bottom:0;transform-origin:0 0;overflow:visible;">
-              <div class="gridEmpty" id="gridEmpty" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
-                <div class="gridEmptyIcon"></div>
-                <b>Анкет пока нет</b>
-                <span>Подключи первую — она появится здесь карточкой</span>
-              </div>
+          <!-- Сетка карточек -->
+          <section class="accountsGrid" id="accountsList">
+            <div class="gridEmpty" id="gridEmpty">
+              <div class="gridEmptyIcon"></div>
+              <b>Анкет пока нет</b>
+              <span>Подключи первую — она появится здесь карточкой</span>
             </div>
-          </div>
+          </section>
 
         </section>
       </section>
 
       <!-- ── АНКЕТЫ ── -->
-      <div class="bigPanel" style="display:none;">
+      <div class="bigPanel">
 
   <div style="
     background:rgba(255,255,255,.02);
@@ -546,7 +541,7 @@
           </div>
           <p class="url"></p>
           <div class="meta">
-            <span class="checked"></span><div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;"></div>
+            <span class="checked"></span>
             <span class="cookies"></span>
             <span class="images"></span>
           </div>
@@ -560,8 +555,7 @@
 
     <!-- Шаблон квадратной карточки на главной -->
     <template id="squareCardTemplate">
-      <article class="sqCard" style="position:relative;">
-        <div class="sqConnectDot" title="Потяни чтобы соединить" style="position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);"></div>
+      <article class="sqCard">
         <div class="sqPhoto">
           <img class="sqImg" alt="" />
           <div class="sqFallback">AI</div>
@@ -882,8 +876,8 @@
       <span>Настройки аналитика</span>
       <button class="modalClose" id="analyticsModalClose">✕</button>
     </div>
-    <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;overscroll-behavior:contain;">
-      <label style="display:none;">Анкета
+    <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;">
+      <label>Анкета
         <select id="aModalAccountSelect" class="aiSelect" style="margin-top:6px;"></select>
       </label>
       <label style="display:none;">Groq API ключи (каждый на новой строке)
@@ -892,10 +886,10 @@
           rows="4"
           style="min-height:80px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);"></textarea>
       </label>
-      <label style="display:none;">Модель
+      <label>Модель
         <input id="aModalGroqModel" value="llama-3.3-70b-versatile" />
       </label>
-      <label style="display:none;">OpenRouter API ключ (fallback)
+      <label>OpenRouter API ключ (fallback)
         <textarea id="aModalGeminiKeys" 
           placeholder="sk-or-v1-..." 
           rows="2"
@@ -916,13 +910,13 @@
       <label>Местоположение (город, район/улица)
        <input id="aModalLocation" placeholder="Например: Москва, ул. Радужная 5" />
       </label>
-      <label style="display:none;">Личность / стиль
+      <label>Личность / стиль
         <textarea id="aModalPersona" placeholder="Игривая, уверенная..." style="min-height:60px;"></textarea>
       </label>
-      <label style="display:none;">Цель диалога
+      <label>Цель диалога
         <textarea id="aModalGoal" placeholder="Цель: вовлечь в переписку..." style="min-height:60px;"></textarea>
       </label>
-      <label style="display:none;">Стоп-темы
+      <label>Стоп-темы
         <input id="aModalStopTopics" placeholder="деньги, фото интимное..." />
       </label>
       <label>Контакты
@@ -931,7 +925,7 @@
       <label>Условие отдачи контактов
         <input id="aModalContactsTrigger" placeholder="Если человек просит..." />
       </label>
-      <label style="display:none;">Telegram chat_id для уведомлений
+      <label>Telegram chat_id для уведомлений
         <input id="aModalTgChatId" placeholder="Например: 123456789" />
       </label>
       <button class="taskRunBtn" id="aModalSaveBtn" style="margin-top:16px;">Сохранить</button>
