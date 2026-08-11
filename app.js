@@ -511,6 +511,7 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
     } else {
       loadAccounts();
     }
+    renderAICardsOnCanvas();
   });
 });
 
