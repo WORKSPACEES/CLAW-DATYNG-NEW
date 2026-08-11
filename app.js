@@ -2025,7 +2025,6 @@ function renderAICardsOnCanvas() {
 
     group.appendChild(aCard);
 
-    group.appendChild(aCard);
 
     const saved = canvasPositions[`ai_${card.cardId}`];
     if (saved) {
