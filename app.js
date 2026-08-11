@@ -1649,7 +1649,7 @@ function initInfiniteCanvas() {
   });
 
   // Zoom — колесо мыши
-  wrapper.addEventListener("wheel", (e) => {
+  document.addEventListener("wheel", (e) => {
     e.preventDefault();
     const rect = wrapper.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
