@@ -1721,28 +1721,6 @@ function initInfiniteCanvas() {
   });
 
   applyTransform();
- 
-  // Анимационный цикл для бегущих частиц
-  let _animFrameId = null;
-  function _startAnimLoop() {
-    if (_animFrameId) return;
-    function loop() {
-      const hasActive = connections.some(conn => {
-        const fromId = (!conn.from.startsWith("ai_") && !conn.from.startsWith("timer_")) ? conn.from : null;
-        const toId   = (!conn.to.startsWith("ai_")   && !conn.to.startsWith("timer_"))   ? conn.to   : null;
-        return (fromId && runningSplits.has(fromId)) || (toId && runningSplits.has(toId));
-      });
-      if (hasActive) {
-        drawConnections();
-        _animFrameId = requestAnimationFrame(loop);
-      } else {
-        _animFrameId = null;
-        drawConnections();
-      }
-    }
-    _animFrameId = requestAnimationFrame(loop);
-  }
-  window._clawStartAnim = _startAnimLoop;
 
   // Контекстное меню по правой кнопке
   const ctxMenu = document.createElement("div");
@@ -2015,7 +1993,31 @@ function initInfiniteCanvas() {
     });
   }
 
+  // Анимационный цикл для бегущих частиц
+  let _animFrameId = null;
+  function _startAnimLoop() {
+    if (_animFrameId) return;
+    function loop() {
+      const hasActive = connections.some(conn => {
+        const fromId = (!conn.from.startsWith("ai_") && !conn.from.startsWith("timer_")) ? conn.from : null;
+        const toId   = (!conn.to.startsWith("ai_")   && !conn.to.startsWith("timer_"))   ? conn.to   : null;
+        return (fromId && runningSplits.has(fromId)) || (toId && runningSplits.has(toId));
+      });
+      if (hasActive) {
+        drawConnections();
+        _animFrameId = requestAnimationFrame(loop);
+      } else {
+        _animFrameId = null;
+        drawConnections();
+      }
+    }
+    _animFrameId = requestAnimationFrame(loop);
+  }
+  window._clawStartAnim = _startAnimLoop;
+  window._clawDrawWeb = drawConnections;
 
+  applyTransform();
+}
 
 function placeGroupOnCanvas(group, accountId) {
   const saved = canvasPositions[accountId];
