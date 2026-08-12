@@ -11,7 +11,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 from urllib import request, error
 from urllib.parse import urljoin
 
@@ -112,6 +112,12 @@ class AiSettingsPayload(BaseModel):
     contacts_trigger: str = ""
     tg_chat_id: str = ""
     gemini_api_keys: str = ""
+    proxy_protocol: str = ""
+    proxy_host: str = ""
+    proxy_port: str = ""
+    proxy_login: str = ""
+    proxy_password: str = ""
+    user_agent: str = ""
 
 class LikesTaskRequest(BaseModel):
     account_id: str
@@ -382,7 +388,18 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         if not payload.twinby_email or not payload.twinby_code:
             raise HTTPException(status_code=400, detail="Введи email и код из письма")
         import http.client as _hc, json as _json
-        conn = _hc.HTTPSConnection("twinby.ru", timeout=15)
+        from proxy_loader import get_proxy
+        _proxy = get_proxy("twinby")
+        if _proxy and _proxy.get("use_proxy") and _proxy.get("host"):
+            conn = _hc.HTTPSConnection(_proxy["host"], _proxy.get("port", 8080), timeout=15)
+            _proxy_auth = {}
+            if _proxy.get("user"):
+                import base64
+                _creds = base64.b64encode(f"{_proxy.get('user','')}:{_proxy.get('pass','')}".encode()).decode()
+                _proxy_auth = {"Proxy-Authorization": f"Basic {_creds}"}
+            conn.set_tunnel("twinby.ru", 443, _proxy_auth)
+        else:
+            conn = _hc.HTTPSConnection("twinby.ru", timeout=15)
         body = _json.dumps({"login": payload.twinby_email, "provider": "email", "code": payload.twinby_code}).encode()
         conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers={
             "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)",
@@ -713,7 +730,10 @@ def api_get_ai_settings(account_id: str):
 
 @app.post("/api/ai-settings/{account_id}")
 def api_save_ai_settings(account_id: str, payload: AiSettingsPayload):
-    saved = save_ai_settings(account_id, payload.model_dump())
+    existing = get_ai_settings(account_id)
+    data = {k: v for k, v in payload.model_dump().items() if v != "" and v is not None}
+    merged = {**existing, **data}
+    saved = save_ai_settings(account_id, merged)
     return {"ok": True, "settings": saved}
 
 # ── Tasks log / Stats ─────────────────────────────────────
@@ -920,7 +940,9 @@ async def proxy_image(url: str, account_id: str = ""):
 # ── Analytics cards ──────────────────────────────────────
 
 class AnalyticsCardPayload(BaseModel):
-    account_id: str
+    account_id: Optional[str] = None
+    owner_email: Optional[str] = None
+    platform: Optional[str] = None
     bot_name: str = ""
     bot_age: str = ""
     bot_gender: str = "female"
@@ -937,18 +959,24 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     owner_emails = get_team_owner_emails(session["email"])
     accounts_res = supabase.table("accounts").select("id").in_("owner_email", owner_emails).execute()
     account_ids = [a["id"] for a in (accounts_res.data or []) if a.get("id")]
-    if not account_ids:
-        return {"ok": True, "cards": []}
-    cards_res = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
-    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute()
+    cards_res = supabase.table("analytics_cards").select("*").in_("owner_email", owner_emails).execute()
+    null_cards = [c for c in (cards_res.data or []) if c.get("account_id") is None]
+    if account_ids:
+        account_cards = supabase.table("analytics_cards").select("*").in_("account_id", account_ids).execute()
+        all_cards = (account_cards.data or []) + null_cards
+    else:
+        all_cards = null_cards
+    cards_res_data = all_cards
+    settings_res = supabase.table("ai_settings").select("*").in_("account_id", account_ids).execute() if account_ids else type('obj', (object,), {'data': []})()
     settings_by_account = {s.get("account_id"): s for s in (settings_res.data or [])}
     result = []
-    for card in (cards_res.data or []):
+    for card in cards_res_data:
         account_id = card.get("account_id", "")
         settings = settings_by_account.get(account_id) or {}
         result.append({
             "id": card.get("id", ""),
             "account_id": account_id,
+            "platform": card.get("platform") or "Mamba",
             "bot_name": card.get("bot_name") or settings.get("bot_name") or "",
             "bot_age": card.get("bot_age") or settings.get("bot_age") or "",
             "bot_gender": card.get("bot_gender") or settings.get("bot_gender") or "female",
@@ -962,11 +990,19 @@ def api_get_analytics_cards(authorization: str | None = Header(default=None)):
     return {"ok": True, "cards": result}
 
 @app.post("/api/analytics-cards")
-def api_save_analytics_card(payload: AnalyticsCardPayload):
+def api_save_analytics_card(payload: AnalyticsCardPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
     data = payload.model_dump()
     data["id"] = str(uuid.uuid4())
+    data["owner_email"] = session["email"]
     supabase.table("analytics_cards").insert(data).execute()
     return {"ok": True, "card": data}
+
+@app.patch("/api/analytics-cards/{card_id}")
+def api_update_analytics_card(card_id: str, payload: AnalyticsCardPayload):
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    supabase.table("analytics_cards").update(data).eq("id", card_id).execute()
+    return {"ok": True}
 
 @app.delete("/api/analytics-cards/{card_id}")
 def api_delete_analytics_card(card_id: str):
@@ -1351,6 +1387,115 @@ async def intcity_send(payload: IntCitySendRequest, authorization: str | None = 
         "summary": f"Отправлено {sent} из {len(leads)}"
     }
 
+# ── Key Slots ─────────────────────────────────────────────
+
+class KeySlotPayload(BaseModel):
+    name: str = "Слот"
+    keys: str = ""
+
+class ProxyCheckRequest(BaseModel):
+    protocol: str = "http"
+    host: str = ""
+    port: str = ""
+    login: str = ""
+    password: str = ""
+
+class ProxyCheckUARequest(BaseModel):
+    protocol: str = "http"
+    host: str = ""
+    port: str = ""
+    login: str = ""
+    password: str = ""
+    user_agent: str = ""
+
+@app.post("/api/proxy/check-ua")
+def api_proxy_check_ua(payload: ProxyCheckUARequest, authorization: str | None = Header(default=None)):
+    require_auth(authorization)
+    return {"ok": True, "user_agent": payload.user_agent or "не задан"}
+
+@app.post("/api/proxy/check")
+def api_proxy_check(payload: ProxyCheckRequest, authorization: str | None = Header(default=None)):
+    require_auth(authorization)
+    try:
+        proxy_url = f"{payload.protocol}://"
+        if payload.login and payload.password:
+            proxy_url += f"{payload.login}:{payload.password}@"
+        proxy_url += f"{payload.host}:{payload.port}"
+        import httpx as _httpx
+        try:
+            with _httpx.Client(proxy=proxy_url, timeout=10) as client:
+                r = client.get("https://api.ipify.org?format=json")
+                data = r.json()
+                return {"ok": True, "ip": data.get("ip", "")}
+        except TypeError:
+            with _httpx.Client(proxies={"all://": proxy_url}, timeout=10) as client:
+                r = client.get("https://api.ipify.org?format=json")
+                data = r.json()
+                return {"ok": True, "ip": data.get("ip", "")}
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:100]}
+
+@app.get("/api/key-slots")
+def api_get_key_slots(authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("key_slots").select("*").eq("owner_email", session["email"]).order("created_at").execute()
+    return {"ok": True, "slots": res.data or []}
+
+@app.post("/api/key-slots")
+def api_create_key_slot(payload: KeySlotPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    res = supabase.table("key_slots").insert({
+        "owner_email": session["email"],
+        "name": payload.name,
+        "keys": payload.keys,
+    }).execute()
+    return {"ok": True, "slot": res.data[0]}
+
+@app.patch("/api/key-slots/{slot_id}")
+def api_update_key_slot(slot_id: str, payload: KeySlotPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    supabase.table("key_slots").update({
+        "name": payload.name,
+        "keys": payload.keys,
+    }).eq("id", slot_id).eq("owner_email", session["email"]).execute()
+    return {"ok": True}
+
+@app.post("/api/key-slots/release/{account_id}")
+def api_release_key_slot(account_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    # Находим слот привязанный к этой анкете и освобождаем его
+    res = supabase.table("key_slots").select("*").eq("account_id", account_id).eq("owner_email", session["email"]).execute()
+    if res.data:
+        supabase.table("key_slots").update({"account_id": None}).eq("id", res.data[0]["id"]).execute()
+    return {"ok": True}
+
+@app.delete("/api/key-slots/{slot_id}")
+def api_delete_key_slot(slot_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    supabase.table("key_slots").delete().eq("id", slot_id).eq("owner_email", session["email"]).execute()
+    return {"ok": True}
+
+@app.post("/api/key-slots/{slot_id}/assign")
+def api_assign_key_slot(slot_id: str, account_id: str = "", authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    slot_res = supabase.table("key_slots").select("*").eq("id", slot_id).eq("owner_email", session["email"]).execute()
+    if not slot_res.data:
+        raise HTTPException(status_code=404, detail="Слот не найден")
+    slot = slot_res.data[0]
+    keys = [k.strip() for k in (slot["keys"] or "").splitlines() if k.strip()]
+    if not keys:
+        raise HTTPException(status_code=400, detail="Слот пустой")
+    if not account_id:
+        raise HTTPException(status_code=400, detail="account_id не передан")
+    # Применяем все ключи к ai_settings анкеты
+    existing = supabase.table("ai_settings").select("account_id").eq("account_id", account_id).execute()
+    if existing.data:
+        supabase.table("ai_settings").update({"groq_api_keys": "\n".join(keys)}).eq("account_id", account_id).execute()
+    else:
+        supabase.table("ai_settings").insert({"account_id": account_id, "groq_api_keys": "\n".join(keys)}).execute()
+    # Привязываем слот к анкете
+    supabase.table("key_slots").update({"account_id": account_id}).eq("id", slot_id).execute()
+    return {"ok": True, "assigned": 1}
 
 # ── Health ────────────────────────────────────────────────
 
