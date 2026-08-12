@@ -17,8 +17,23 @@ BASE_HOST = "twinby.ru"
 API_BASE = "/api"
 
 from proxy_loader import get_proxy as _get_proxy
+_account_proxy = {}
+
 def _proxy():
+    if _account_proxy and _account_proxy.get("proxy_host"):
+        return {
+            "use_proxy": True,
+            "host": _account_proxy["proxy_host"],
+            "port": int(_account_proxy.get("proxy_port") or 8080),
+            "username": _account_proxy.get("proxy_login", ""),
+            "password": _account_proxy.get("proxy_password", ""),
+            "user_agent": _account_proxy.get("user_agent", ""),
+        }
     return _get_proxy("twinby")
+
+def set_account_proxy(settings: dict):
+    global _account_proxy
+    _account_proxy = settings if settings.get("proxy_host") else {}
 
 
 def parse_cookies(raw: str) -> dict:
@@ -80,9 +95,19 @@ def extract_jwt(cookies_or_token: dict | str) -> str:
     return ""
 
 
-def _api_request(method: str, path: str, token: str, body: dict = None) -> dict:
+def _api_request(method: str, path: str, token: str, body: dict = None, account_proxy: dict = None) -> dict:
     """Запрос к twinby.ru API."""
     p = _proxy()
+    # Если есть per-account прокси — используем его
+    if account_proxy and account_proxy.get("proxy_host"):
+        p = {
+            "use_proxy": True,
+            "host": account_proxy["proxy_host"],
+            "port": int(account_proxy.get("proxy_port") or 8080),
+            "username": account_proxy.get("proxy_login", ""),
+            "password": account_proxy.get("proxy_password", ""),
+            "user_agent": account_proxy.get("user_agent", ""),
+        }
     headers = {
         "Accept": "application/json",
         "Accept-Language": "ru-RU,ru;q=0.9",
@@ -248,7 +273,9 @@ def send_message(token: str, chat_id, message: str) -> dict:
 
 # ── Высокоуровневые задачи ────────────────────────────────
 
-def task_likes_http(token: str, limit: int = 20) -> dict:
+def task_likes_http(token: str, limit: int = 20, settings: dict = None) -> dict:
+    if settings:
+        set_account_proxy(settings)
     liked = 0
     skipped = 0
     errors = 0
@@ -389,6 +416,7 @@ def task_auto_reply_http(
     should_cancel_fn=None,
 ) -> dict:
     """Авто-ответ для Twinby."""
+    set_account_proxy(settings)
 
     status_check = detect_account_status(token)
     if status_check["status"] == "blocked":
