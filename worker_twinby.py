@@ -941,11 +941,12 @@ async def process_job(job: dict):
 
             if job_type in ("likes", "likes-http"):
                 limit = max(1, min(100, int(payload.get("limit", 10))))
+                settings = get_ai_settings(account_id)
 
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
                         None,
-                        lambda: twinby_task_likes_http(token, limit=limit)
+                        lambda: twinby_task_likes_http(token, limit=limit, settings=settings)
                     ),
                     timeout=300.0
                 )
