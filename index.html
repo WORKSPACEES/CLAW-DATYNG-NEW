@@ -10,11 +10,6 @@
     .page { display: none; }
     .page.activePage { display: block; }
     #tablesPage.activePage { display: flex !important; flex-direction: column; }
-    #homePage.activePage { display: flex !important; flex-direction: column; } 
-    #canvasWrapper { flex: 1; min-height: 300px; }
-    #keysPanel.open { right: 0 !important; }
-    #keysPanelToggle:hover { background: rgba(16,245,168,0.1); }
-    #keySlotForm.open { transform: translateX(0) !important; }
   </style>
 </head>
   <body>
@@ -209,8 +204,8 @@
     <main class="app" id="mainApp" style="display:none;">
 
       <!-- ── ГЛАВНАЯ ── -->
-      <section class="page activePage" id="homePage" style="display:flex;flex-direction:column;height:100%;">
-        <div class="platformBtns" id="platformBtnsRow" style="position:relative;z-index:10;">
+      <section class="page activePage" id="homePage">
+        <div class="platformBtns" id="platformBtnsRow">
           <button class="platformBtn active" data-platform="Mamba">Mamba</button>
           <button class="platformBtn" data-platform="Twinby">Twinby</button>
           <button class="platformBtn" data-platform="Vznakomstve">Взнакомстве</button>
@@ -221,10 +216,10 @@
           <span id="operatorTabsContainer" style="display:flex;gap:8px;flex-wrap:wrap;"></span>
           <button class="platformBtn" id="addTabBtn" title="Добавить вкладку" style="width:36px;padding:7px 0;text-align:center;">+</button>
         </div>
-        <section class="homeLayout" style="display:flex;flex-direction:column;flex:1;min-height:0;">
+        <section class="homeLayout">
 
           <!-- Форма подключения -->
-          <form class="panel connectPanel" id="connectForm" style="position:relative;z-index:10;">
+          <form class="panel connectPanel" id="connectForm">
             <div class="panelHead connectToggle" id="connectToggle">
               <h2>Подключить анкету</h2>
               <span class="connectArrow">▼</span>
@@ -282,23 +277,20 @@
             </template>
           </form>
 
-          <!-- Infinite canvas -->
-          <div id="canvasWrapper" style="position:absolute;top:0;left:0;right:0;bottom:0;overflow:visible;background:var(--bg);">
-            <canvas id="webCanvas" style="position:absolute;top:0;left:0;pointer-events:none;"></canvas>
-            <div id="accountsList" style="position:absolute;top:0;left:0;right:0;bottom:0;transform-origin:0 0;overflow:visible;">
-              <div class="gridEmpty" id="gridEmpty" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">
-                <div class="gridEmptyIcon"></div>
-                <b>Анкет пока нет</b>
-                <span>Подключи первую — она появится здесь карточкой</span>
-              </div>
+          <!-- Сетка карточек -->
+          <section class="accountsGrid" id="accountsList">
+            <div class="gridEmpty" id="gridEmpty">
+              <div class="gridEmptyIcon"></div>
+              <b>Анкет пока нет</b>
+              <span>Подключи первую — она появится здесь карточкой</span>
             </div>
-          </div>
+          </section>
 
         </section>
       </section>
 
       <!-- ── АНКЕТЫ ── -->
-      <div class="bigPanel" style="display:none;">
+      <div class="bigPanel">
 
   <div style="
     background:rgba(255,255,255,.02);
@@ -549,7 +541,7 @@
           </div>
           <p class="url"></p>
           <div class="meta">
-            <span class="checked"></span><div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;"></div>
+            <span class="checked"></span>
             <span class="cookies"></span>
             <span class="images"></span>
           </div>
@@ -563,8 +555,7 @@
 
     <!-- Шаблон квадратной карточки на главной -->
     <template id="squareCardTemplate">
-      <article class="sqCard" style="position:relative;">
-        <div class="sqConnectDot" title="Потяни чтобы соединить" style="position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);"></div>
+      <article class="sqCard">
         <div class="sqPhoto">
           <img class="sqImg" alt="" />
           <div class="sqFallback">AI</div>
@@ -885,8 +876,8 @@
       <span>Настройки аналитика</span>
       <button class="modalClose" id="analyticsModalClose">✕</button>
     </div>
-    <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;overscroll-behavior:contain;">
-      <label style="display:none;">Анкета
+    <div class="modalBody" style="gap:0;max-height:70vh;overflow-y:auto;">
+      <label>Анкета
         <select id="aModalAccountSelect" class="aiSelect" style="margin-top:6px;"></select>
       </label>
       <label style="display:none;">Groq API ключи (каждый на новой строке)
@@ -895,10 +886,10 @@
           rows="4"
           style="min-height:80px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);"></textarea>
       </label>
-      <label style="display:none;">Модель
+      <label>Модель
         <input id="aModalGroqModel" value="llama-3.3-70b-versatile" />
       </label>
-      <label style="display:none;">OpenRouter API ключ (fallback)
+      <label>OpenRouter API ключ (fallback)
         <textarea id="aModalGeminiKeys" 
           placeholder="sk-or-v1-..." 
           rows="2"
@@ -919,13 +910,13 @@
       <label>Местоположение (город, район/улица)
        <input id="aModalLocation" placeholder="Например: Москва, ул. Радужная 5" />
       </label>
-      <label style="display:none;">Личность / стиль
+      <label>Личность / стиль
         <textarea id="aModalPersona" placeholder="Игривая, уверенная..." style="min-height:60px;"></textarea>
       </label>
-      <label style="display:none;">Цель диалога
+      <label>Цель диалога
         <textarea id="aModalGoal" placeholder="Цель: вовлечь в переписку..." style="min-height:60px;"></textarea>
       </label>
-      <label style="display:none;">Стоп-темы
+      <label>Стоп-темы
         <input id="aModalStopTopics" placeholder="деньги, фото интимное..." />
       </label>
       <label>Контакты
@@ -934,7 +925,7 @@
       <label>Условие отдачи контактов
         <input id="aModalContactsTrigger" placeholder="Если человек просит..." />
       </label>
-      <label style="display:none;">Telegram chat_id для уведомлений
+      <label>Telegram chat_id для уведомлений
         <input id="aModalTgChatId" placeholder="Например: 123456789" />
       </label>
       <button class="taskRunBtn" id="aModalSaveBtn" style="margin-top:16px;">Сохранить</button>
@@ -979,41 +970,6 @@
 </div>
 
 <script src="./app.js"></script>
-
-<!-- Правая панель ключей -->
-<div id="keysPanelToggle" style="position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:9999;background:rgba(15,18,30,0.97);border:1px solid rgba(16,245,168,0.3);border-right:none;border-radius:10px 0 0 10px;padding:16px 10px;cursor:pointer;writing-mode:vertical-rl;font:700 12px 'Orbitron',sans-serif;color:#10f5a8;letter-spacing:0.12em;backdrop-filter:blur(16px);box-shadow:-4px 0 20px rgba(16,245,168,0.15);user-select:none;">
-  КЛЮЧИ
-</div>
-
-<div id="keysPanel" style="position:fixed;right:-340px;top:0;height:100vh;width:320px;z-index:9998;background:rgba(10,13,26,0.97);border-left:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(20px);transition:right 0.3s ease;display:flex;flex-direction:column;overflow:hidden;">
-
-  <!-- Список слотов -->
-  <div id="keysPanelMain" style="display:flex;flex-direction:column;height:100%;padding:20px;transition:transform 0.3s ease,opacity 0.3s ease;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <span style="font:700 13px 'Orbitron',sans-serif;color:var(--text);letter-spacing:0.08em;">СЛОТЫ КЛЮЧЕЙ</span>
-      <button id="addKeySlotBtn" style="background:var(--accent3);border:none;border-radius:6px;color:#000;font:700 14px 'Space Grotesk',sans-serif;padding:4px 12px;cursor:pointer;">+</button>
-    </div>
-    <div id="keySlotsBody" style="flex:1;overflow-y:auto;"></div>
-  </div>
-
-  <!-- Форма создания/редактирования слота — выезжает поверх -->
-  <div id="keySlotForm" style="position:absolute;inset:0;background:rgba(10,13,26,0.99);padding:20px;display:flex;flex-direction:column;transform:translateX(100%);transition:transform 0.3s ease;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-      <span style="font:700 13px 'Orbitron',sans-serif;color:var(--text);letter-spacing:0.08em;">СЛОТ КЛЮЧЕЙ</span>
-      <button id="keySlotModalClose" style="background:none;border:none;color:var(--text2);cursor:pointer;font-size:18px;">✕</button>
-    </div>
-    <label style="margin-bottom:14px;">Название
-      <input id="keySlotName" placeholder="Например: Пачка 1" style="margin-top:6px;width:100%;" />
-    </label>
-    <label style="flex:1;display:flex;flex-direction:column;">Ключи (каждый на новой строке)
-      <textarea id="keySlotKeys" placeholder="gsk_ключ1...&#10;gsk_ключ2...&#10;sk-or-v1-..." style="margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--cyan);flex:1;resize:none;"></textarea>
-    </label>
-    <button class="taskRunBtn" id="keySlotSaveBtn" style="margin-top:14px;">Сохранить</button>
-  </div>
-
-</div>
-
-<div id="keySlotModal" style="display:none;"></div>
 
   </body>
 </html>
