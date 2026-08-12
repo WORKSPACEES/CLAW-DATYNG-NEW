@@ -4799,6 +4799,7 @@ function initSheetApp(container) {
     canvas.setAttribute("tabindex", "-1");
     canvas.style.outline = "none";
     document.addEventListener("paste", (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
       const tablesPage = document.getElementById('tablesPage');
       if (!tablesPage || !tablesPage.classList.contains('activePage')) return;
       e.preventDefault();
