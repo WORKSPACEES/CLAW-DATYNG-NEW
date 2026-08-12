@@ -29,7 +29,14 @@ def _proxy():
             "password": _account_proxy.get("proxy_password", ""),
             "user_agent": _account_proxy.get("user_agent", ""),
         }
-    return _get_proxy("twinby")
+    return {
+        "use_proxy": True,
+        "host": "154.212.31.246",
+        "port": 62670,
+        "username": "hBeZwcdSM",
+        "password": "tXsEa8hci",
+        "user_agent": "",
+    }
 
 def set_account_proxy(settings: dict):
     global _account_proxy
