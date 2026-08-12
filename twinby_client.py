@@ -498,8 +498,12 @@ def task_auto_reply_http(
                 recheck_resp = get_chat_messages(token, chat_id)
                 recheck_raw = recheck_resp.get("results") or recheck_resp.get("data") or []
                 if recheck_raw:
-                    print(f"[TWINBY MATCH] {name}: уже ответили (параллельный запуск), пропускаю", flush=True)
-                    continue
+                    last_owner = str(recheck_raw[0].get("ownerId") or recheck_raw[0].get("owner_id") or "")
+                    me_check = get_me(token)
+                    my_id_check = str(me_check.get("id") or me_check.get("user_id") or "")
+                    if last_owner == my_id_check:
+                        print(f"[TWINBY MATCH] {name}: уже ответили, пропускаю", flush=True)
+                        continue
 
                 # Сообщение 1 — приветствие
                 send_result = send_message(token, chat_id, first_reply)
@@ -520,6 +524,41 @@ def task_auto_reply_http(
     # ── Отвечаем на входящие сообщения ────────────────────
     chats = task_get_all_chats_with_history(token, max_chats=max_chats)
     chats = [c for c in chats if c.get("last_role") == "user"]
+
+# ── Добавляем матчи где человек написал первым ──
+try:
+    matches_resp = get_empty_chats(token, page=1, size=20)
+    matches_all = matches_resp.get("results") or matches_resp.get("data") or []
+    me_r = get_me(token)
+    my_id = str(me_r.get("id") or me_r.get("user_id") or "")
+    for m in matches_all:
+        chat_obj = m.get("chat") or m
+        chat_id = chat_obj.get("id") or m.get("chatId") or m.get("chat_id")
+        if not chat_id:
+            continue
+        msgs_resp = get_chat_messages(token, chat_id)
+        msgs_raw = msgs_resp.get("results") or msgs_resp.get("data") or []
+        if not msgs_raw:
+            continue
+        last_owner = str(msgs_raw[0].get("ownerId") or msgs_raw[0].get("owner_id") or "")
+        if last_owner == my_id:
+            continue
+        companion = m.get("interlocutor") or m.get("companion") or m.get("user") or {}
+        name = companion.get("name") or "Собеседник"
+        msgs_raw_rev = list(reversed(msgs_raw))
+        history = []
+        for msg in msgs_raw_rev:
+            text = (msg.get("text") or "").strip()
+            if not text:
+                continue
+            owner_id = str(msg.get("ownerId") or msg.get("owner_id") or "")
+            history.append({"role": "user" if owner_id != my_id else "assistant", "content": text})
+        if history and history[-1]["role"] == "user":
+            chats.append({"chat_id": chat_id, "name": name, "history": history, "last_role": "user"})
+except Exception as e:
+    print(f"[TWINBY] Матчи с сообщениями: {e}", flush=True)
+
+for chat in chats:
 
     for chat in chats:
         if should_cancel_fn and should_cancel_fn():
