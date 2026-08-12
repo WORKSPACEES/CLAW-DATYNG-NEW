@@ -1274,6 +1274,9 @@ async def pw_run_chat_task(page, settings: dict, account_id: str) -> dict:
                         "привет, встречи на мат основе интересуют ?",
                     ]
                     first_msg = random.choice(_greetings)
+                    contacts = settings.get("contacts", "")
+                    if contacts:
+                        first_msg = first_msg.rstrip() + " " + contacts
 
                     if first_msg:
                         input_el = await page.wait_for_selector(
