@@ -109,6 +109,8 @@ def default_ai_settings() -> dict:
         "bot_name": "", "bot_age": "", "bot_gender": "female", "location": "",
         "persona": "", "goal": "", "stop_topics": "", "contacts": "",
         "contacts_trigger": "", "tg_chat_id": "", "gemini_api_keys": "", "updated_at": None,
+        "proxy_protocol": "", "proxy_host": "", "proxy_port": "", "proxy_login": "",
+        "proxy_password": "", "user_agent": "",
     }
 
 def get_ai_settings(account_id: str) -> dict:
