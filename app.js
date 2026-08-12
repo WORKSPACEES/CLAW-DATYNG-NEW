@@ -4463,6 +4463,8 @@ async function autoAssignAllFreeSlots() {
   const accounts = accData.accounts || [];
 
   for (const account of accounts) {
+    const alreadyBound = keySlots.find(s => s.account_id === account.id);
+    if (alreadyBound) continue;
     const settingsRes = await fetch(WORKER_API + "/api/ai-settings/" + encodeURIComponent(account.id));
     const settingsData = await settingsRes.json();
     const hasKeys = (settingsData.settings?.groq_api_keys || "").trim().length > 0;
