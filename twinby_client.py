@@ -485,7 +485,6 @@ def task_auto_reply_http(
                     "привет, интересуют встречи на мп? если да давай в телегу сразу",
                     "Привет, если интересны встречи на один раз, давай в телеге сразу спишемся ? ",
                 ]
-                # ── По кругу, не рандом ──
                 _acc_id = settings.get("_account_id", "default")
                 _idx_path = Path(__file__).resolve().parent / "data" / f"greeting_index_twinby_{_acc_id}.json"
                 try:
@@ -494,14 +493,11 @@ def task_auto_reply_http(
                     _idx = 0
                 first_reply = _greetings[_idx % len(_greetings)]
                 _idx_path.write_text(json.dumps({"idx": (_idx + 1) % len(_greetings)}, ensure_ascii=False), encoding="utf-8")
-                # Добавляем контакт к приветствию
                 exact_contact = (settings.get("contacts") or "").strip()
                 if exact_contact:
                     first_reply = first_reply.rstrip() + " " + exact_contact
                 print(f"[TWINBY MATCH] Приветствие #{_idx}: {first_reply}", flush=True)
-                print(f"[TWINBY MATCH] Выбрано приветствие: {first_reply}", flush=True)
 
-                # ── Финальная проверка прямо перед отправкой ──
                 recheck_resp = get_chat_messages(token, chat_id)
                 recheck_raw = recheck_resp.get("results") or recheck_resp.get("data") or []
                 if recheck_raw:
@@ -512,7 +508,6 @@ def task_auto_reply_http(
                         print(f"[TWINBY MATCH] {name}: уже ответили, пропускаю", flush=True)
                         continue
 
-                # Сообщение 1 — приветствие
                 send_result = send_message(token, chat_id, first_reply)
                 if send_result.get("_status") not in (200, 201):
                     print(f"[TWINBY MATCH] ✗ {name}: {send_result}", flush=True)
@@ -532,40 +527,38 @@ def task_auto_reply_http(
     chats = task_get_all_chats_with_history(token, max_chats=max_chats)
     chats = [c for c in chats if c.get("last_role") == "user"]
 
-# ── Добавляем матчи где человек написал первым ──
-try:
-    matches_resp = get_empty_chats(token, page=1, size=20)
-    matches_all = matches_resp.get("results") or matches_resp.get("data") or []
-    me_r = get_me(token)
-    my_id = str(me_r.get("id") or me_r.get("user_id") or "")
-    for m in matches_all:
-        chat_obj = m.get("chat") or m
-        chat_id = chat_obj.get("id") or m.get("chatId") or m.get("chat_id")
-        if not chat_id:
-            continue
-        msgs_resp = get_chat_messages(token, chat_id)
-        msgs_raw = msgs_resp.get("results") or msgs_resp.get("data") or []
-        if not msgs_raw:
-            continue
-        last_owner = str(msgs_raw[0].get("ownerId") or msgs_raw[0].get("owner_id") or "")
-        if last_owner == my_id:
-            continue
-        companion = m.get("interlocutor") or m.get("companion") or m.get("user") or {}
-        name = companion.get("name") or "Собеседник"
-        msgs_raw_rev = list(reversed(msgs_raw))
-        history = []
-        for msg in msgs_raw_rev:
-            text = (msg.get("text") or "").strip()
-            if not text:
+    # ── Добавляем матчи где человек написал первым ──
+    try:
+        matches_resp = get_empty_chats(token, page=1, size=20)
+        matches_all = matches_resp.get("results") or matches_resp.get("data") or []
+        me_r = get_me(token)
+        my_id = str(me_r.get("id") or me_r.get("user_id") or "")
+        for m in matches_all:
+            chat_obj = m.get("chat") or m
+            chat_id = chat_obj.get("id") or m.get("chatId") or m.get("chat_id")
+            if not chat_id:
                 continue
-            owner_id = str(msg.get("ownerId") or msg.get("owner_id") or "")
-            history.append({"role": "user" if owner_id != my_id else "assistant", "content": text})
-        if history and history[-1]["role"] == "user":
-            chats.append({"chat_id": chat_id, "name": name, "history": history, "last_role": "user"})
-except Exception as e:
-    print(f"[TWINBY] Матчи с сообщениями: {e}", flush=True)
-
-for chat in chats:
+            msgs_resp = get_chat_messages(token, chat_id)
+            msgs_raw = msgs_resp.get("results") or msgs_resp.get("data") or []
+            if not msgs_raw:
+                continue
+            last_owner = str(msgs_raw[0].get("ownerId") or msgs_raw[0].get("owner_id") or "")
+            if last_owner == my_id:
+                continue
+            companion = m.get("interlocutor") or m.get("companion") or m.get("user") or {}
+            name = companion.get("name") or "Собеседник"
+            msgs_raw_rev = list(reversed(msgs_raw))
+            history = []
+            for msg in msgs_raw_rev:
+                text = (msg.get("text") or "").strip()
+                if not text:
+                    continue
+                owner_id = str(msg.get("ownerId") or msg.get("owner_id") or "")
+                history.append({"role": "user" if owner_id != my_id else "assistant", "content": text})
+            if history and history[-1]["role"] == "user":
+                chats.append({"chat_id": chat_id, "name": name, "history": history, "last_role": "user"})
+    except Exception as e:
+        print(f"[TWINBY] Матчи с сообщениями: {e}", flush=True)
 
     for chat in chats:
         if should_cancel_fn and should_cancel_fn():
@@ -601,7 +594,6 @@ for chat in chats:
         if should_cancel_fn and should_cancel_fn():
             break
 
-        # ── Страховка от дублей: перепроверяем перед отправкой ──
         fresh_resp = get_chat_messages(token, chat_id)
         fresh_msgs = fresh_resp.get("results") or fresh_resp.get("data") or []
         if fresh_msgs:
@@ -617,11 +609,9 @@ for chat in chats:
             if contacts and contacts.lower() in reply.lower():
                 reply_without_contact = reply.replace(contacts, "").strip()
                 reply_without_contact = reply_without_contact.strip("—-,. ")
-
                 if reply_without_contact:
                     send_message(token, chat_id, reply_without_contact)
                     time.sleep(random.uniform(2, 4))
-
                 send_result = send_message(token, chat_id, contacts)
                 status = send_result.get("_status")
                 if status in (200, 201):
