@@ -438,6 +438,10 @@ const connectToggle = document.getElementById("connectToggle");
 const connectBody   = document.getElementById("connectBody");
 const connectArrow  = document.querySelector(".connectArrow");
 
+// Скрываем панель подключения при старте — показывается только через правую кнопку мыши
+const connectForm = document.getElementById("connectForm");
+if (connectForm) connectForm.style.display = "none";
+
 if (connectToggle && connectBody) {
   connectToggle.addEventListener("click", (e) => {
     e.preventDefault();
@@ -493,6 +497,7 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
     btn.classList.add("active");
     activePlatform = btn.dataset.platform;
     activeTabId = null;
+    try { localStorage.setItem("claw_active_platform", activePlatform); } catch {}
     // Переключаем поля в слотах
     document.querySelectorAll(".connectSlot").forEach(slot => {
       const isTwinby  = activePlatform === "Twinby";
@@ -504,13 +509,15 @@ document.querySelectorAll(".platformBtn[data-platform]").forEach(btn => {
       slot.querySelector(".slotIntCityFields").style.display   = isIntCity ? "" : "none";
     });
     const connectPanel = document.getElementById("connectForm");
-    if (connectPanel) connectPanel.style.display = "";
+    if (connectPanel) connectPanel.style.display = "none";
     renderOperatorTabs();
     if (cachedAccounts.length > 0) {
       renderSquareGridFromCache();
     } else {
       loadAccounts();
     }
+    renderAICardsOnCanvas();
+    renderTimerCardsOnCanvas();
   });
 });
 
@@ -1168,6 +1175,13 @@ if (groqBtn.onclick !== undefined) groqBtn.onclick = () => runGroq(account.id, s
     return;
   }
 
+  splitBtn.classList.add("running");
+  splitBtn.innerHTML = "⏹ Стоп";
+  splitBtn.disabled = false;
+  splitInput.disabled = true;
+  cardEl?.classList.add("sqActive");
+  if (sqResultEl) { sqResultEl.textContent = "Запускаю..."; sqResultEl.className = "sqResult"; }
+
   toggleSplit(account.id, splitBtn, splitInput, likesBtn, groqBtn, likesInput, limit, sqResultEl, cardEl, account.platform);
 };
 
@@ -1528,6 +1542,778 @@ async function refreshAccountStatuses() {
   }
 }
 
+// ── Infinite Canvas (pan/zoom/drag) ──────────────────────
+
+const CANVAS_STORAGE_KEY = "claw_canvas_positions";
+let canvasPositions = {}; // { [accountId]: { x, y } }
+let canvasTransform = { x: 0, y: 0, scale: 1 };
+
+function loadCanvasPositions() {
+  try {
+    const raw = localStorage.getItem(CANVAS_STORAGE_KEY);
+    if (raw) canvasPositions = JSON.parse(raw);
+  } catch {}
+}
+
+function saveCanvasPositions() {
+  try { localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(canvasPositions)); } catch {}
+}
+
+function initInfiniteCanvas() {
+  const wrapper = document.getElementById("canvasWrapper");
+  const canvas = document.getElementById("webCanvas");
+  const container = document.getElementById("accountsList");
+  if (!wrapper || !canvas || !container) return;
+
+  loadCanvasPositions();
+
+  let isPanning = false;
+  let isDragging = false;
+  let dragGroup = null;
+  let dragOffsetX = 0, dragOffsetY = 0;
+  let panStartX = 0, panStartY = 0;
+  let panOriginX = 0, panOriginY = 0;
+
+  function applyTransform() {
+    container.style.transform = `translate(${canvasTransform.x}px, ${canvasTransform.y}px) scale(${canvasTransform.scale})`;
+    if (window._clawDrawWeb) window._clawDrawWeb(); else drawWeb();
+  }
+
+  function drawWeb() {
+    const ctx = canvas.getContext("2d");
+    const W = wrapper.offsetWidth;
+    const H = wrapper.offsetHeight;
+    canvas.width = W;
+    canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    const groups = [...container.querySelectorAll(".sqGroup")];
+    if (groups.length < 2) return;
+
+    const centers = groups.map(g => {
+      const x = parseFloat(g.style.left || 0);
+      const y = parseFloat(g.style.top || 0);
+      const w = g.offsetWidth;
+      const h = g.offsetHeight;
+      return {
+        x: (x + w / 2) * canvasTransform.scale + canvasTransform.x,
+        y: (y + h / 2) * canvasTransform.scale + canvasTransform.y,
+      };
+    });
+
+    ctx.strokeStyle = "rgba(92,110,248,0.15)";
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i < centers.length; i++) {
+      for (let j = i + 1; j < centers.length; j++) {
+        const dx = centers[i].x - centers[j].x;
+        const dy = centers[i].y - centers[j].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 600) continue; // не рисуем линии слишком далёких
+        const alpha = Math.max(0, 1 - dist / 600) * 0.25;
+        ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(centers[i].x, centers[i].y);
+        ctx.lineTo(centers[j].x, centers[j].y);
+        ctx.stroke();
+      }
+    }
+
+    // Точки в центрах карточек
+    ctx.fillStyle = "rgba(92,110,248,0.4)";
+    centers.forEach(c => {
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // Pan — зажатие пустого места
+  wrapper.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".sqGroup")) return;
+    if (e.target.closest(".sqAIGroup")) return;
+    if (e.target.closest(".sqTimerGroup")) return;
+    if (e.target.closest(".sqProxyGroup")) return;
+    if (e.button !== 0) return;
+    isPanning = true;
+    panStartX = e.clientX;
+    panStartY = e.clientY;
+    panOriginX = canvasTransform.x;
+    panOriginY = canvasTransform.y;
+    wrapper.style.cursor = "grabbing";
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (isPanning) {
+      canvasTransform.x = panOriginX + (e.clientX - panStartX);
+      canvasTransform.y = panOriginY + (e.clientY - panStartY);
+      applyTransform();
+    }
+    if (isDragging && dragGroup) {
+      const x = (e.clientX - wrapper.getBoundingClientRect().left - canvasTransform.x) / canvasTransform.scale - dragOffsetX;
+      const y = (e.clientY - wrapper.getBoundingClientRect().top - canvasTransform.y) / canvasTransform.scale - dragOffsetY;
+      dragGroup.style.left = x + "px";
+      dragGroup.style.top = y + "px";
+      const id = dragGroup.dataset.accountId || `ai_${dragGroup.dataset.cardId}`;
+      if (id) canvasPositions[id] = { x, y };
+      if (window._clawDrawWeb) window._clawDrawWeb(); else drawWeb();
+    }
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (isPanning) { isPanning = false; wrapper.style.cursor = ""; }
+    if (isDragging) { isDragging = false; dragGroup = null; saveCanvasPositions(); }
+  });
+
+  // Zoom — колесо мыши
+  document.addEventListener("wheel", (e) => {
+    const homePage = document.getElementById("homePage");
+    if (!homePage || !homePage.classList.contains("activePage")) return;
+    if (!e.target.closest("#canvasWrapper")) return;
+    e.preventDefault();
+    const rect = wrapper.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.max(0.2, Math.min(3, canvasTransform.scale * delta));
+    canvasTransform.x = mouseX - (mouseX - canvasTransform.x) * (newScale / canvasTransform.scale);
+    canvasTransform.y = mouseY - (mouseY - canvasTransform.y) * (newScale / canvasTransform.scale);
+    canvasTransform.scale = newScale;
+    applyTransform();
+  }, { passive: false });
+
+  // Drag карточек (анкеты)
+  container.addEventListener("mousedown", (e) => {
+    const group = e.target.closest(".sqGroup");
+    if (!group) return;
+    if (e.target.closest("button, input, textarea, select, a")) return;
+    e.preventDefault();
+    isDragging = true;
+    dragGroup = group;
+    const rect = wrapper.getBoundingClientRect();
+    const gx = parseFloat(group.style.left || 0);
+    const gy = parseFloat(group.style.top || 0);
+    dragOffsetX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale - gx;
+    dragOffsetY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale - gy;
+    group.style.zIndex = "100";
+    setTimeout(() => { if (dragGroup) dragGroup.style.zIndex = ""; }, 500);
+  });
+
+  // Drag AI карточек
+  container.addEventListener("mousedown", (e) => {
+    const group = e.target.closest(".sqAIGroup");
+    if (!group) return;
+    if (e.target.closest(".sqConnectDot")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = wrapper.getBoundingClientRect();
+    const gx = parseFloat(group.style.left || 0);
+    const gy = parseFloat(group.style.top || 0);
+    const ox = (e.clientX - rect.left) - gx;
+    const oy = (e.clientY - rect.top) - gy;
+    group.style.zIndex = "100";
+    function move(e) {
+      const x = (e.clientX - rect.left) - ox;
+      const y = (e.clientY - rect.top) - oy;
+      group.style.left = x + "px";
+      group.style.top = y + "px";
+      const cardId = group.dataset.cardId;
+      if (cardId) canvasPositions[`ai_${cardId}`] = { x, y };
+      if (window._clawDrawWeb) window._clawDrawWeb();
+    }
+    function up() {
+      group.style.zIndex = "";
+      saveCanvasPositions();
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    });
+
+  // Drag нитки от sqConnectDot
+  let drawingLine = false;
+  let lineFromId = null;
+  let lineEndX = 0, lineEndY = 0;
+
+  container.addEventListener("mousedown", (e) => {
+    const dot = e.target.closest(".sqConnectDot");
+    if (!dot) return;
+    e.stopPropagation();
+    e.preventDefault();
+    drawingLine = true;
+    const group = dot.closest(".sqGroup") || dot.closest(".sqAIGroup") || dot.closest(".sqTimerGroup") || dot.closest(".sqProxyGroup");
+    lineFromId = group?.dataset.accountId;
+    const rect = wrapper.getBoundingClientRect();
+    lineEndX = e.clientX - rect.left;
+    lineEndY = e.clientY - rect.top;
+  });
+
+  window.addEventListener("mousemove", (e) => {
+    if (!drawingLine) return;
+    const rect = wrapper.getBoundingClientRect();
+    lineEndX = e.clientX - rect.left;
+    lineEndY = e.clientY - rect.top;
+    drawConnections();
+    const ctx = canvas.getContext("2d");
+    const fromEl = container.querySelector(`[data-account-id="${lineFromId}"]`);
+    if (!fromEl) return;
+    const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+    const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+    ctx.strokeStyle = "rgba(16,245,168,0.8)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(lineEndX, lineEndY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  window.addEventListener("mouseup", (e) => {
+    if (!drawingLine) return;
+    drawingLine = false;
+    const target = document.elementFromPoint(e.clientX, e.clientY);
+    const toGroup = target?.closest(".sqGroup") || target?.closest(".sqAIGroup") || target?.closest(".sqTimerGroup") || target?.closest(".sqProxyGroup");
+    const toId = toGroup?.dataset.accountId;
+    if (toId && toId !== lineFromId) {
+      const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
+      if (!exists) {
+        connections.push({ from: lineFromId, to: toId });
+        saveConnections();
+        const aiId = lineFromId.startsWith("ai_") ? lineFromId : toId.startsWith("ai_") ? toId : null;
+        const accountId = lineFromId.startsWith("ai_") ? toId : toId.startsWith("ai_") ? lineFromId : null;
+        
+        // Прокси нода
+        const proxyId = lineFromId.startsWith("proxy_") ? lineFromId : toId.startsWith("proxy_") ? toId : null;
+        const proxyAccountId = lineFromId.startsWith("proxy_") ? toId : toId.startsWith("proxy_") ? lineFromId : null;
+        if (proxyId && proxyAccountId && !proxyAccountId.startsWith("proxy_") && !proxyAccountId.startsWith("ai_") && !proxyAccountId.startsWith("timer_")) {
+          const proxyCard = proxyCards.find(c => c.id === proxyId);
+          if (proxyCard) {
+            fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccountId)}`).then(r=>r.json()).then(cur => {
+              fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccountId)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
+                body: JSON.stringify({
+                  ...(cur.settings || {}),
+                  proxy_protocol: proxyCard.protocol,
+                  proxy_host: proxyCard.host,
+                  proxy_port: proxyCard.port,
+                  proxy_login: proxyCard.login,
+                  proxy_password: proxyCard.password,
+                  user_agent: proxyCard.userAgent,
+                }),
+              }).catch(() => {});
+            }).catch(() => {});
+          }
+        }
+
+        if (aiId && accountId && !accountId.startsWith("ai_") && !accountId.startsWith("timer_")) {
+          const cardId = aiId.replace("ai_", "");
+          const aiCard = analyticsCards.find(c => c.cardId === cardId);
+          if (aiCard) {
+            aiCard.accountId = accountId;
+            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ account_id: accountId }),
+            }).catch(() => {});
+            fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(accountId)}`).then(r=>r.json()).then(cur => {
+              loadKeySlots().then(() => {
+                const freeSlot = keySlots.find(s => !s.account_id);
+                const hasKeys = freeSlot ? false : (cur.settings?.groq_api_keys || "").trim().length > 0;
+                fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(accountId)}`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    ...(cur.settings || {}),
+                    bot_name: aiCard.botName || "",
+                    bot_age: aiCard.botAge || "",
+                    bot_gender: aiCard.botGender || "female",
+                    location: aiCard.location || "",
+                    contacts: aiCard.contacts || "",
+                    contacts_trigger: aiCard.contactsTrigger || "",
+                    ...(!hasKeys && freeSlot ? { groq_api_keys: freeSlot.keys, groq_api_key: freeSlot.keys.split("\n")[0].trim() } : {}),
+                  }),
+                }).then(() => {
+                  if (!hasKeys && freeSlot) {
+                    freeSlot.account_id = accountId;
+                    renderKeySlots();
+                    fetch(WORKER_API + "/api/key-slots/" + freeSlot.id + "/assign?account_id=" + encodeURIComponent(accountId), { method: "POST" }).catch(() => {});
+                  }
+                }).catch(() => {});
+              }).catch(() => {});
+            }).catch(() => {});
+          }
+        }
+      }
+    }
+    drawConnections();
+  });
+
+  window.addEventListener("resize", () => {
+    drawWeb();
+  });
+
+  // Контекстное меню по правой кнопке
+  const ctxMenu = document.createElement("div");
+  ctxMenu.id = "canvasCtxMenu";
+  ctxMenu.style.cssText = "display:none;position:fixed;z-index:1000;background:rgba(15,18,30,0.97);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px 0;min-width:180px;box-shadow:0 8px 32px rgba(0,0,0,.4);";
+  ctxMenu.innerHTML = `
+    <div id="ctxAddAI" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
+      ✦ Добавить AI-менеджера
+    </div>
+    <div id="ctxAddTimer" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
+      ⏱ Добавить таймер
+    </div>
+    <div id="ctxAddProxy" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;">
+      🌐 Прокси / User-Agent
+    </div>
+    <div id="ctxConnectAccount" style="padding:10px 16px;cursor:pointer;font:500 13px 'Space Grotesk',sans-serif;color:var(--text);display:flex;align-items:center;gap:8px;border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;">
+      🔗 Подключить анкету
+    </div>
+  `;
+  document.body.appendChild(ctxMenu);
+
+  let ctxMenuX = 0, ctxMenuY = 0;
+
+  wrapper.addEventListener("contextmenu", (e) => {
+    if (e.target.closest(".sqGroup")) return;
+    e.preventDefault();
+    ctxMenu.style.display = "block";
+    ctxMenu.style.left = e.clientX + "px";
+    ctxMenu.style.top = e.clientY + "px";
+    // Запоминаем координаты в canvas-пространстве
+    const rect = wrapper.getBoundingClientRect();
+    ctxMenuX = (e.clientX - rect.left - canvasTransform.x) / canvasTransform.scale;
+    ctxMenuY = (e.clientY - rect.top - canvasTransform.y) / canvasTransform.scale;
+  });
+
+  document.getElementById("ctxAddAI").onclick = () => {
+    ctxMenu.style.display = "none";
+    window._ctxSpawnX = ctxMenuX;
+    window._ctxSpawnY = ctxMenuY;
+    document.getElementById("addAnalyticsBtn")?.click();
+  };
+
+  document.getElementById("ctxAddTimer").onclick = () => {
+    ctxMenu.style.display = "none";
+    window._ctxSpawnX = ctxMenuX;
+    window._ctxSpawnY = ctxMenuY;
+    addTimerCard();
+  };
+
+  document.getElementById("ctxAddProxy").onclick = () => {
+    ctxMenu.style.display = "none";
+    window._ctxSpawnX = ctxMenuX;
+    window._ctxSpawnY = ctxMenuY;
+    addProxyCard();
+  };
+
+  document.getElementById("ctxConnectAccount").onclick = () => {
+    ctxMenu.style.display = "none";
+    const form = document.getElementById("connectForm");
+    const body = document.getElementById("connectBody");
+    if (!form) return;
+    form.style.display = "";
+    if (body) body.style.display = "flex";
+    form.scrollIntoView({ behavior: "smooth" });
+  };
+
+  document.addEventListener("mousedown", (e) => {
+    if (!e.target.closest(".sqProxyGroup")) return;
+    if (e.target.closest(".sqConnectDot")) return;
+    isPanning = false;
+    e.stopImmediatePropagation();
+    var startX = e.clientX;
+    var startY = e.clientY;
+    var grp = e.target.closest(".sqProxyGroup");
+    var startLeft = parseFloat(grp.style.left) || 0;
+    var startTop = parseFloat(grp.style.top) || 0;
+    function move(e) {
+      isPanning = false;
+      var dx = (e.clientX - startX) / canvasTransform.scale;
+      var dy = (e.clientY - startY) / canvasTransform.scale;
+      grp.style.left = (startLeft + dx) + "px";
+      grp.style.top = (startTop + dy) + "px";
+      const proxyId = grp.dataset.proxyId;
+      const card = proxyCards.find(c => c.id === proxyId);
+      if (card) { card.x = parseFloat(grp.style.left); card.y = parseFloat(grp.style.top); }
+      if (window._clawDrawWeb) window._clawDrawWeb();
+    }
+    function up() {
+      saveProxyCards();
+      window.removeEventListener("mousemove", move, true);
+      window.removeEventListener("mouseup", up, true);
+    }
+    window.addEventListener("mousemove", move, true);
+    window.addEventListener("mouseup", up, true);
+  }, true);
+
+  document.addEventListener("click", () => { ctxMenu.style.display = "none"; });
+  document.addEventListener("contextmenu", (e) => {
+    if (!e.target.closest("#canvasWrapper")) ctxMenu.style.display = "none";
+  });
+
+  // Нитки между карточками
+  const connections = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+
+  function saveConnections() {
+    localStorage.setItem("claw_connections", JSON.stringify(connections));
+  }
+
+  function drawConnections() {
+    const ctx = canvas.getContext("2d");
+    const W = wrapper.offsetWidth;
+    const H = wrapper.offsetHeight;
+    canvas.width = W;
+    canvas.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    wrapper.querySelectorAll(".connDisconnectBtn").forEach(el => el.remove());
+
+    // Паутина между карточками
+    const groups = [...container.querySelectorAll(".sqGroup")];
+    if (groups.length >= 2) {
+      const centers = groups.map(g => ({
+        x: (parseFloat(g.style.left||0) + g.offsetWidth/2) * canvasTransform.scale + canvasTransform.x,
+        y: (parseFloat(g.style.top||0) + g.offsetHeight/2) * canvasTransform.scale + canvasTransform.y,
+      }));
+      for (let i = 0; i < centers.length; i++) {
+        for (let j = i+1; j < centers.length; j++) {
+          const dx = centers[i].x - centers[j].x;
+          const dy = centers[i].y - centers[j].y;
+          const dist = Math.sqrt(dx*dx+dy*dy);
+          if (dist > 600) continue;
+          const alpha = Math.max(0, 1 - dist/600) * 0.08;
+          ctx.strokeStyle = `rgba(92,110,248,${alpha})`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(centers[i].x, centers[i].y);
+          ctx.lineTo(centers[j].x, centers[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Нитки соединений
+    const now = Date.now();
+
+    connections.forEach((conn, idx) => {
+      const fromEl = container.querySelector(`[data-account-id="${conn.from}"]`);
+      const toEl = container.querySelector(`[data-account-id="${conn.to}"]`);
+      if (!fromEl || !toEl) return;
+
+      const fx = (parseFloat(fromEl.style.left||0) + fromEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+      const fy = (parseFloat(fromEl.style.top||0) + fromEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+      const tx = (parseFloat(toEl.style.left||0) + toEl.offsetWidth/2) * canvasTransform.scale + canvasTransform.x;
+      const ty = (parseFloat(toEl.style.top||0) + toEl.offsetHeight/2) * canvasTransform.scale + canvasTransform.y;
+
+      const dx = tx - fx, dy = ty - fy;
+      const len = Math.sqrt(dx*dx + dy*dy);
+
+      // Определяем — есть ли активный сплит на одном из концов
+      const fromAccountId = conn.from.startsWith("ai_") ? null : conn.from.startsWith("timer_") ? null : conn.from;
+      const toAccountId   = conn.to.startsWith("ai_") ? null : conn.to.startsWith("timer_") ? null : conn.to;
+      const isActive = (fromAccountId && runningSplits.has(fromAccountId)) || (toAccountId && runningSplits.has(toAccountId));
+
+      if (isActive) {
+        // ── АКТИВНАЯ нитка: плазменная дуга ──
+
+        // Пульсация яркости
+        const pulse = 0.75 + 0.25 * Math.sin(now * 0.004);
+
+        // Широкий внешний ореол
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = `rgba(16,245,168,${0.06 * pulse})`;
+        ctx.lineWidth = 20;
+        ctx.lineCap = "round";
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Средний слой
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = `rgba(16,245,168,${0.2 * pulse})`;
+        ctx.lineWidth = 8;
+        ctx.shadowColor = "#10f5a8";
+        ctx.shadowBlur = 15;
+        ctx.stroke();
+
+        // Тело кабеля — тёмное
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(0,30,20,0.8)";
+        ctx.lineWidth = 3;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Плазменное ядро
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = `rgba(255,255,255,${0.85 * pulse})`;
+        ctx.lineWidth = 1;
+        ctx.shadowColor = "#10f5a8";
+        ctx.shadowBlur = 25;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Бегущие частицы — быстрые искры
+        const speed = 0.0004;
+        const particleCount = Math.max(3, Math.floor(len / 60));
+        for (let p = 0; p < particleCount; p++) {
+          const t = ((now * speed + p / particleCount) % 1);
+          const px = fx + dx * t;
+          const py = fy + dy * t;
+
+          // Длинный хвост
+          const tailLen = 0.18;
+          const t0 = Math.max(0, t - tailLen);
+          const tailX = fx + dx * t0;
+          const tailY = fy + dy * t0;
+
+          const grad = ctx.createLinearGradient(tailX, tailY, px, py);
+          grad.addColorStop(0, "rgba(16,245,168,0)");
+          grad.addColorStop(0.5, "rgba(16,245,168,0.4)");
+          grad.addColorStop(1, "rgba(255,255,255,1)");
+
+          ctx.beginPath();
+          ctx.moveTo(tailX, tailY);
+          ctx.lineTo(px, py);
+          ctx.strokeStyle = grad;
+          ctx.lineWidth = 3;
+          ctx.shadowColor = "#ffffff";
+          ctx.shadowBlur = 20;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Яркая голова
+          ctx.beginPath();
+          ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = "#10f5a8";
+          ctx.shadowBlur = 25;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+
+        // Терминалы — светящиеся коннекторы
+        [[fx, fy], [tx, ty]].forEach(([cx, cy]) => {
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(16,245,168,${0.8 * pulse})`;
+          ctx.lineWidth = 2;
+          ctx.shadowColor = "#10f5a8";
+          ctx.shadowBlur = 20;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+          ctx.fillStyle = "#ffffff";
+          ctx.shadowColor = "#10f5a8";
+          ctx.shadowBlur = 15;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+        ctx.shadowBlur = 0;
+
+        } else {
+        // ── НЕАКТИВНАЯ нитка: кабель под напряжением ──
+
+        // Внешний ореол — широкий размытый
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(99,102,241,0.06)";
+        ctx.lineWidth = 14;
+        ctx.lineCap = "round";
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Средний слой — тело кабеля
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(30,27,75,0.9)";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        // Внутреннее свечение — тонкое и яркое
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(tx, ty);
+        ctx.strokeStyle = "rgba(139,92,246,0.7)";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "#7c3aed";
+        ctx.shadowBlur = 10;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Блики — имитация стеклянного провода
+        const perpX = -(dy / len) * 1.2;
+        const perpY = (dx / len) * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(fx + perpX, fy + perpY);
+        ctx.lineTo(tx + perpX, ty + perpY);
+        ctx.strokeStyle = "rgba(196,181,253,0.25)";
+        ctx.lineWidth = 0.8;
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Терминалы на концах — металлические коннекторы
+        [[fx, fy], [tx, ty]].forEach(([cx, cy]) => {
+          // Внешнее кольцо
+          ctx.beginPath();
+          ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(139,92,246,0.5)";
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = "#7c3aed";
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          // Внутренний кружок
+          ctx.beginPath();
+          ctx.arc(cx, cy, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = "rgba(167,139,250,0.9)";
+          ctx.shadowColor = "#a78bfa";
+          ctx.shadowBlur = 8;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        });
+      }
+
+      // Кнопка отсоединения
+      const mx = (fx + tx) / 2;
+      const my = (fy + ty) / 2;
+      const btn = document.createElement("div");
+      btn.className = "connDisconnectBtn";
+      btn.textContent = "✕";
+      btn.style.cssText = `
+        position:absolute;
+        left:${mx}px;
+        top:${my}px;
+        transform:translate(-50%,-50%);
+        background:rgba(15,18,30,0.95);
+        border:1px solid rgba(16,245,168,0.4);
+        border-radius:50%;
+        color:#10f5a8;
+        font:700 11px 'Space Grotesk',sans-serif;
+        width:20px;height:20px;
+        display:flex;align-items:center;justify-content:center;
+        cursor:pointer;
+        z-index:50;
+        pointer-events:all;
+        opacity:0;
+        transition:opacity 0.15s;
+        box-shadow:0 0 10px rgba(16,245,168,0.3);
+      `;
+      btn.addEventListener("mouseenter", () => btn.style.opacity = "1");
+      btn.addEventListener("mouseleave", () => btn.style.opacity = "0");
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const conn = connections[idx];
+        const aiId = conn.from.startsWith("ai_") ? conn.from : conn.to.startsWith("ai_") ? conn.to : null;
+        if (aiId) {
+          const cardId = aiId.replace("ai_", "");
+          const aiCard = analyticsCards.find(c => c.cardId === cardId);
+          if (aiCard) {
+            aiCard.accountId = null;
+            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ account_id: null }),
+            }).catch(() => {});
+          }
+        }
+        // Отвязываем слот ключей
+        const disconnAccountId = conn.from.startsWith("ai_") ? conn.to : conn.from.startsWith("timer_") ? null : conn.from.startsWith("proxy_") ? conn.to : conn.from;
+        if (disconnAccountId && !disconnAccountId.startsWith("ai_") && !disconnAccountId.startsWith("timer_") && !disconnAccountId.startsWith("proxy_")) {
+          const boundSlot = keySlots.find(s => s.account_id === disconnAccountId);
+          if (boundSlot) {
+            boundSlot.account_id = null;
+            renderKeySlots();
+            fetch(WORKER_API + "/api/key-slots/release/" + encodeURIComponent(disconnAccountId), { method: "POST" }).catch(() => {});
+          }
+        }
+        // Отвязка прокси
+        const proxyNodeId = conn.from.startsWith("proxy_") ? conn.from : conn.to.startsWith("proxy_") ? conn.to : null;
+        const proxyAccId = conn.from.startsWith("proxy_") ? conn.to : conn.to.startsWith("proxy_") ? conn.from : null;
+        if (proxyNodeId && proxyAccId) {
+          fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccId)}`).then(r=>r.json()).then(cur => {
+            fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccId)}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
+              body: JSON.stringify({
+                ...(cur.settings || {}),
+                proxy_protocol: "", proxy_host: "", proxy_port: "",
+                proxy_login: "", proxy_password: "", user_agent: "",
+              }),
+            }).catch(() => {});
+          }).catch(() => {});
+        }
+        connections.splice(idx, 1);
+        saveConnections();
+        drawConnections();
+      });
+      wrapper.appendChild(btn);
+    });
+  }
+
+  // Анимационный цикл для бегущих частиц
+  let _animFrameId = null;
+  function _startAnimLoop() {
+    if (_animFrameId) return;
+    function loop() {
+      const hasActive = connections.some(conn => {
+        const fromId = (!conn.from.startsWith("ai_") && !conn.from.startsWith("timer_")) ? conn.from : null;
+        const toId   = (!conn.to.startsWith("ai_")   && !conn.to.startsWith("timer_"))   ? conn.to   : null;
+        return (fromId && runningSplits.has(fromId)) || (toId && runningSplits.has(toId));
+      });
+      if (hasActive) {
+        drawConnections();
+        _animFrameId = requestAnimationFrame(loop);
+      } else {
+        _animFrameId = null;
+        drawConnections();
+      }
+    }
+    _animFrameId = requestAnimationFrame(loop);
+  }
+  window._clawStartAnim = _startAnimLoop;
+  window._clawDrawWeb = drawConnections;
+
+  applyTransform();
+}
+
+function placeGroupOnCanvas(group, accountId) {
+  const saved = canvasPositions[accountId];
+  if (saved) {
+    group.style.left = saved.x + "px";
+    group.style.top = saved.y + "px";
+  } else {
+    // Авто-расстановка по спирали
+    const idx = document.getElementById("accountsList").querySelectorAll(".sqGroup").length;
+    const angle = idx * 2.4;
+    const radius = 60 + idx * 55;
+    const cx = 500, cy = 100;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    group.style.left = x + "px";
+    group.style.top = y + "px";
+    canvasPositions[accountId] = { x, y };
+    saveCanvasPositions();
+  }
+}
+
+function drawWebIfReady() {
+  window.dispatchEvent(new Event("resize"));
+}
+
 function renderSquareGridFromCache() {
   renderSquareGrid(cachedAccounts, cachedLogs);
 }
@@ -1561,7 +2347,7 @@ function renderSquareGrid(accounts, statsMap) {
   const filteredIds = new Set(filtered.map(a => a.id));
   accountsList.querySelectorAll(".sqGroup").forEach(el => {
     const id = el.dataset.accountId;
-    if (!filteredIds.has(id)) el.remove();
+    if (!filteredIds.has(id) && !id?.startsWith("timer_") && !id?.startsWith("ai_") && !id?.startsWith("proxy_")) el.remove();
   });
 
   // Добавляем/обновляем только изменившиеся
@@ -1578,29 +2364,19 @@ function renderSquareGrid(accounts, statsMap) {
     const node = createSquareCard(account, stats);
     group.appendChild(node);
 
-    if (analyst) {
-      let savedCollapsed = false;
-      try { savedCollapsed = localStorage.getItem(`claw_ai_collapsed_${account.id}`) === "1"; } catch {}
-      const connector = document.createElement("div");
-      connector.className = "sqConnector";
-      connector.innerHTML = `<div class="sqConnectorLine"></div>`;
-      group.appendChild(connector);
-      if (savedCollapsed) connector.style.display = "none";
+  
 
-      const aCard = document.createElement("div");
-      aCard.className = "sqAnalyticsCard";
-      aCard.innerHTML = `
-        <div class="sqACardHead">AI</div>
-        <div class="sqACardName">${analyst.botName ? `${analyst.botName}, ${analyst.botAge}` : "Аналитик"}</div>
-        <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${analyst.contacts || "—"}</span></div>
-        <div class="sqACardRow"><span class="sqALabel">Стиль</span><span class="sqAVal">${analyst.persona || "—"}</span></div>
-        <div class="sqACardRow"><span class="sqALabel">Цель</span><span class="sqAVal">${analyst.goal || "—"}</span></div>
-      `;
-      group.appendChild(aCard);
-      if (savedCollapsed) aCard.style.display = "none";
-    }
-
+    group.style.position = "absolute";
+    placeGroupOnCanvas(group, account.id);
     accountsList.appendChild(group);
+    setTimeout(() => {
+      const canvas = document.getElementById("webCanvas");
+      if (canvas) {
+        const ctx = canvas.getContext("2d");
+        // триггер перерисовки паутины
+        document.getElementById("canvasWrapper") && drawWebIfReady();
+      }
+    }, 50);
   });
 
   return; // дальше старый код не нужен
@@ -1608,6 +2384,526 @@ function renderSquareGrid(accounts, statsMap) {
 
 function renderAiAccountOptions(accounts) {
   // старой формы AI больше нет — ничего не делаем
+}
+
+let proxyCards = [];
+
+function saveProxyCards() {
+  try { localStorage.setItem("claw_proxy_cards", JSON.stringify(proxyCards)); } catch {}
+}
+
+function loadProxyCards() {
+  try {
+    const raw = localStorage.getItem("claw_proxy_cards");
+    if (raw) proxyCards = JSON.parse(raw);
+  } catch {}
+}
+
+function addProxyCard() {
+  const id = "proxy_" + Date.now();
+  const x = window._ctxSpawnX || 300;
+  const y = window._ctxSpawnY || 300;
+  const card = { id, protocol: "http", host: "", port: "", login: "", password: "", userAgent: "", x, y, platform: activePlatform };
+  proxyCards.push(card);
+  saveProxyCards();
+  renderProxyCard(card);
+}
+
+function renderProxyCard(card) {
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+  const existing = container.querySelector(`.sqProxyGroup[data-proxy-id="${card.id}"]`);
+  if (existing) existing.remove();
+
+  const group = document.createElement("div");
+  group.className = "sqProxyGroup";
+  group.dataset.proxyId = card.id;
+  group.dataset.accountId = card.id;
+  group.style.cssText = `position:absolute;left:${card.x}px;top:${card.y}px;z-index:10;cursor:grab;`;
+
+  const dot = document.createElement("div");
+  dot.className = "sqConnectDot";
+  dot.title = "Потяни чтобы соединить";
+  dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:#60a5fa;border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(96,165,250,0.6);";
+  group.appendChild(dot);
+
+  const inner = document.createElement("div");
+  inner.style.cssText = "background:rgba(10,13,25,0.97);border:1px solid rgba(96,165,250,0.3);border-radius:14px;padding:14px;min-width:220px;box-shadow:0 4px 24px rgba(0,0,0,0.4);";
+  inner.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span style="font:700 11px 'Orbitron',sans-serif;color:#60a5fa;letter-spacing:0.08em;">🌐 ПРОКСИ</span>
+      <button class="sqProxyDeleteBtn" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;opacity:0.6;">✕</button>
+    </div>
+    <select class="sqProxyProtocol" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid rgba(96,165,250,0.3);background:rgba(5,8,16,0.8);color:#60a5fa;font:600 11px 'JetBrains Mono',monospace;margin-bottom:6px;">
+      <option value="http" ${card.protocol==="http"?"selected":""}>HTTP</option>
+      <option value="https" ${card.protocol==="https"?"selected":""}>HTTPS</option>
+      <option value="socks5" ${card.protocol==="socks5"?"selected":""}>SOCKS5</option>
+    </select>
+    <input class="sqProxyHost" type="text" placeholder="host" value="${card.host}" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid rgba(96,165,250,0.3);background:rgba(5,8,16,0.8);color:#e2e8f0;font:400 11px 'JetBrains Mono',monospace;margin-bottom:6px;box-sizing:border-box;" />
+    <input class="sqProxyPort" type="text" placeholder="port" value="${card.port}" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid rgba(96,165,250,0.3);background:rgba(5,8,16,0.8);color:#e2e8f0;font:400 11px 'JetBrains Mono',monospace;margin-bottom:6px;box-sizing:border-box;" />
+    <input class="sqProxyLogin" type="text" placeholder="логин (опционально)" value="${card.login}" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid rgba(96,165,250,0.3);background:rgba(5,8,16,0.8);color:#e2e8f0;font:400 11px 'JetBrains Mono',monospace;margin-bottom:6px;box-sizing:border-box;" />
+    <input class="sqProxyPassword" type="password" placeholder="пароль (опционально)" value="${card.password}" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid rgba(96,165,250,0.3);background:rgba(5,8,16,0.8);color:#e2e8f0;font:400 11px 'JetBrains Mono',monospace;margin-bottom:6px;box-sizing:border-box;" />
+    <input class="sqProxyUA" type="text" placeholder="User-Agent (опционально)" value="${card.userAgent}" style="width:100%;padding:5px 8px;border-radius:6px;border:1px solid rgba(96,165,250,0.3);background:rgba(5,8,16,0.8);color:#e2e8f0;font:400 11px 'JetBrains Mono',monospace;margin-bottom:8px;box-sizing:border-box;" />
+    <div class="sqProxyStatus" style="font:400 10px 'JetBrains Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:8px;min-height:14px;"></div>
+    <button class="sqProxyCheckBtn" style="width:100%;padding:6px;border-radius:7px;border:1px solid rgba(96,165,250,0.4);background:rgba(96,165,250,0.1);color:#60a5fa;font:700 10px 'Orbitron',sans-serif;cursor:pointer;letter-spacing:0.06em;">⚡ ПРОВЕРИТЬ</button>
+  `;
+  group.appendChild(inner);
+  container.appendChild(group);
+
+  // drag через глобальный document обработчик
+
+  // Inputs
+  inner.querySelector(".sqProxyProtocol").oninput = e => { card.protocol = e.target.value; saveProxyCards(); };
+  inner.querySelector(".sqProxyHost").oninput = e => {
+    const val = e.target.value;
+    const parts = val.split(":");
+    if (parts.length >= 4) {
+      card.host = parts[0];
+      card.port = parts[1];
+      card.login = parts[2];
+      card.password = parts.slice(3).join(":");
+      inner.querySelector(".sqProxyHost").value = card.host;
+      inner.querySelector(".sqProxyPort").value = card.port;
+      inner.querySelector(".sqProxyLogin").value = card.login;
+      inner.querySelector(".sqProxyPassword").value = card.password;
+    } else if (parts.length === 2) {
+      card.host = parts[0];
+      card.port = parts[1];
+      inner.querySelector(".sqProxyHost").value = card.host;
+      inner.querySelector(".sqProxyPort").value = card.port;
+    } else {
+      card.host = val;
+    }
+    saveProxyCards();
+  };
+  inner.querySelector(".sqProxyPort").oninput = e => { card.port = e.target.value; saveProxyCards(); };
+  inner.querySelector(".sqProxyLogin").oninput = e => { card.login = e.target.value; saveProxyCards(); };
+  inner.querySelector(".sqProxyPassword").oninput = e => { card.password = e.target.value; saveProxyCards(); };
+  inner.querySelector(".sqProxyUA").oninput = e => { card.userAgent = e.target.value; saveProxyCards(); };
+
+  // Delete
+  inner.querySelector(".sqProxyDeleteBtn").onclick = () => {
+    group.remove();
+    proxyCards = proxyCards.filter(c => c.id !== card.id);
+    saveProxyCards();
+  };
+
+  // Check
+  inner.querySelector(".sqProxyCheckBtn").onclick = async () => {
+    const status = inner.querySelector(".sqProxyStatus");
+    status.textContent = "Проверяю...";
+    status.style.color = "rgba(255,255,255,0.4)";
+    try {
+      const res = await fetch(WORKER_API + "/api/proxy/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
+        body: JSON.stringify({ protocol: card.protocol, host: card.host, port: card.port, login: card.login, password: card.password }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        const ua = card.userAgent ? " | UA: " + card.userAgent.slice(0, 30) + "..." : "";
+        status.textContent = "✓ " + (data.ip || "OK") + ua;
+        status.style.color = "#10f5a8";
+      } else {
+        status.textContent = "✗ " + (data.error || "Ошибка");
+        status.style.color = "#fb7185";
+      }
+    } catch {
+      status.textContent = "✗ Нет ответа";
+      status.style.color = "#fb7185";
+    }
+  };
+}
+
+function renderProxyCardsOnCanvas() {
+  loadProxyCards();
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+  container.querySelectorAll(".sqProxyGroup").forEach(el => el.remove());
+  proxyCards.filter(c => (c.platform || "Mamba") === activePlatform).forEach(card => renderProxyCard(card));
+}
+
+let timerCards = [];
+
+function saveTimerCards() {
+  try { localStorage.setItem("claw_timer_cards", JSON.stringify(timerCards)); } catch {}
+}
+
+function loadTimerCards() {
+  try {
+    const raw = localStorage.getItem("claw_timer_cards");
+    if (raw) timerCards = JSON.parse(raw);
+  } catch {}
+}
+
+function addTimerCard() {
+  const id = "timer_" + Date.now();
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+
+  const x = (window._ctxSpawnX != null) ? window._ctxSpawnX : 400 + Math.random() * 200;
+  const y = (window._ctxSpawnY != null) ? window._ctxSpawnY : 200 + Math.random() * 200;
+  window._ctxSpawnX = null;
+  window._ctxSpawnY = null;
+
+  const card = { id, workMin: 1, workSec: 0, pauseMin: 0, pauseSec: 30, x, y, platform: activePlatform };
+  timerCards.push(card);
+  saveTimerCards();
+  renderTimerCard(card);
+}
+
+function renderTimerCard(card) {
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+
+  const existing = container.querySelector(`.sqTimerGroup[data-timer-id="${card.id}"]`);
+  if (existing) existing.remove();
+
+  const group = document.createElement("div");
+  group.className = "sqTimerGroup";
+  group.dataset.timerId = card.id;
+  group.dataset.accountId = card.id;
+  group.style.cssText = `position:absolute;left:${card.x}px;top:${card.y}px;cursor:grab;z-index:10;`;
+
+  // Точка соединения
+  const dot = document.createElement("div");
+  dot.className = "sqConnectDot";
+  dot.title = "Потяни чтобы соединить";
+  dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);";
+  group.appendChild(dot);
+
+  group.innerHTML += `
+    <div style="background:rgba(15,18,30,0.97);border:1px solid rgba(251,191,36,0.4);border-radius:12px;padding:14px 16px;min-width:200px;position:relative;">
+      <button class="sqTimerDeleteBtn" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;opacity:0.6;">✕</button>
+      <div style="font:700 11px 'Orbitron',sans-serif;color:#fbbf24;letter-spacing:0.06em;margin-bottom:12px;">⏱ ТАЙМЕР</div>
+      <div style="font:500 11px 'Space Grotesk',sans-serif;color:rgba(255,255,255,0.5);margin-bottom:4px;">Работает</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;">
+        <input class="sqTimerWorkMin" type="number" min="0" max="999" value="${card.workMin}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(251,191,36,0.3);background:rgba(5,8,16,0.8);color:#fbbf24;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">мин</span>
+        <input class="sqTimerWorkSec" type="number" min="0" max="59" value="${card.workSec}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(251,191,36,0.3);background:rgba(5,8,16,0.8);color:#fbbf24;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
+      </div>
+      <div style="font:500 11px 'Space Grotesk',sans-serif;color:rgba(255,255,255,0.5);margin-bottom:4px;">Пауза перед перезапуском</div>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:12px;">
+        <input class="sqTimerPauseMin" type="number" min="0" max="999" value="${card.pauseMin}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(92,110,248,0.3);background:rgba(5,8,16,0.8);color:#a5b4fc;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">мин</span>
+        <input class="sqTimerPauseSec" type="number" min="0" max="59" value="${card.pauseSec}" style="width:54px;padding:5px 8px;border-radius:6px;border:1px solid rgba(92,110,248,0.3);background:rgba(5,8,16,0.8);color:#a5b4fc;font:600 13px 'JetBrains Mono',monospace;text-align:center;" />
+        <span style="color:rgba(255,255,255,0.4);font-size:11px;">сек</span>
+      </div>
+      <div class="sqTimerStatus" style="font:400 11px 'JetBrains Mono',monospace;color:rgba(255,255,255,0.4);margin-bottom:10px;min-height:16px;"></div>
+      <button class="sqTimerStartBtn" style="width:100%;padding:7px;border-radius:7px;border:1px solid rgba(251,191,36,0.4);background:rgba(251,191,36,0.1);color:#fbbf24;font:700 11px 'Orbitron',sans-serif;cursor:pointer;letter-spacing:0.06em;">▶ ВКЛЮЧИТЬ</button>
+    </div>
+  `;
+
+  // Drag
+  group.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".sqConnectDot")) return;
+    if (e.target.closest("button, input")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const wrapper = document.getElementById("canvasWrapper");
+    const rect = wrapper.getBoundingClientRect();
+    const ox = e.clientX - rect.left - parseFloat(group.style.left);
+    const oy = e.clientY - rect.top - parseFloat(group.style.top);
+    group.style.zIndex = "100";
+    function move(e) {
+      const x = e.clientX - rect.left - ox;
+      const y = e.clientY - rect.top - oy;
+      group.style.left = x + "px";
+      group.style.top = y + "px";
+      card.x = x; card.y = y;
+      canvasPositions[card.id] = { x, y };
+      if (window._clawDrawWeb) window._clawDrawWeb();
+    }
+    function up() {
+      group.style.zIndex = "";
+      saveTimerCards();
+      saveCanvasPositions();
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    }
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  });
+
+  // Удалить
+  group.querySelector(".sqTimerDeleteBtn").onclick = (e) => {
+    e.stopPropagation();
+    stopTimerCard(card.id);
+    timerCards = timerCards.filter(c => c.id !== card.id);
+    saveTimerCards();
+    group.remove();
+    if (window._clawDrawWeb) window._clawDrawWeb();
+  };
+
+  // Сохранение значений при изменении
+  group.querySelector(".sqTimerWorkMin").addEventListener("input", (e) => { card.workMin = parseInt(e.target.value) || 0; saveTimerCards(); });
+  group.querySelector(".sqTimerWorkSec").addEventListener("input", (e) => { card.workSec = parseInt(e.target.value) || 0; saveTimerCards(); });
+  group.querySelector(".sqTimerPauseMin").addEventListener("input", (e) => { card.pauseMin = parseInt(e.target.value) || 0; saveTimerCards(); });
+  group.querySelector(".sqTimerPauseSec").addEventListener("input", (e) => { card.pauseSec = parseInt(e.target.value) || 0; saveTimerCards(); });
+
+  // Старт/стоп
+  const startBtn = group.querySelector(".sqTimerStartBtn");
+  const statusEl = group.querySelector(".sqTimerStatus");
+
+  // Восстанавливаем состояние после перезагрузки
+  if (card.watching) {
+    card._watching = true;
+    startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
+    startBtn.style.background = "rgba(251,191,36,0.2)";
+    startBtn.style.borderColor = "rgba(251,191,36,0.8)";
+    statusEl.textContent = "Слежу за сплитом...";
+    watchTimerCard(card, statusEl, startBtn);
+  }
+
+  startBtn.onclick = () => {
+    if (card._watching) {
+      card._watching = false;
+      card.watching = false;
+      stopTimerCard(card.id);
+      saveTimerCards();
+      startBtn.innerHTML = "▶ ВКЛЮЧИТЬ";
+      startBtn.style.background = "rgba(251,191,36,0.1)";
+      startBtn.style.borderColor = "rgba(251,191,36,0.4)";
+      statusEl.textContent = "Выключен";
+    } else {
+      card._watching = true;
+      card.watching = true;
+      saveTimerCards();
+      startBtn.innerHTML = "⏹ ВЫКЛЮЧИТЬ";
+      startBtn.style.background = "rgba(251,191,36,0.2)";
+      startBtn.style.borderColor = "rgba(251,191,36,0.8)";
+      statusEl.textContent = "Слежу за сплитом...";
+      watchTimerCard(card, statusEl, startBtn);
+    }
+  };
+
+  container.appendChild(group);
+  canvasPositions[card.id] = { x: card.x, y: card.y };
+  if (window._clawDrawWeb) window._clawDrawWeb();
+}
+
+const _timerIntervals = {};
+
+function stopTimerCard(cardId) {
+  const card = timerCards.find(c => c.id === cardId);
+  if (!card) return;
+  card._running = false;
+  if (_timerIntervals[cardId]) {
+    clearTimeout(_timerIntervals[cardId]);
+    delete _timerIntervals[cardId];
+  }
+}
+
+function watchTimerCard(card, statusEl, startBtn) {
+  const workMs  = (card.workMin * 60 + card.workSec) * 1000;
+  const pauseMs = (card.pauseMin * 60 + card.pauseSec) * 1000;
+
+  if (workMs === 0) { statusEl.textContent = "Укажи время работы"; card._watching = false; return; }
+
+  function getLinkedAccountIds() {
+    const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+    return conns
+      .filter(c => c.from === card.id || c.to === card.id)
+      .map(c => c.from === card.id ? c.to : c.from)
+      .filter(id => !id.startsWith("ai_") && !id.startsWith("timer_"));
+  }
+
+  function waitForSplit() {
+    if (!card._watching) return;
+    const accountIds = getLinkedAccountIds();
+    if (!accountIds.length) {
+      statusEl.textContent = "⚠ Привяжи анкету ниткой";
+      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+      return;
+    }
+    const running = accountIds.filter(id => runningSplits.has(id));
+    if (running.length) {
+      statusEl.textContent = `▶ Сплит обнаружен (${running.length}), запускаю отсчёт...`;
+      startWorkCountdown(accountIds);
+    } else {
+      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
+      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+    }
+  }
+
+  function startWorkCountdown(accountIds) {
+    let remaining = workMs;
+    const tick = () => {
+      if (!card._watching) return;
+      remaining -= 1000;
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      statusEl.textContent = `▶ Работает: ${m}м ${s}с (${accountIds.length} анкет)`;
+      if (remaining > 0) {
+        _timerIntervals[card.id] = setTimeout(tick, 1000);
+      } else {
+        stopSplitAndPause(accountIds);
+      }
+    };
+    _timerIntervals[card.id] = setTimeout(tick, 1000);
+  }
+
+  async function stopSplitAndPause(accountIds) {
+    if (!card._watching) return;
+    statusEl.textContent = "⏸ Останавливаю сплиты...";
+    for (const accountId of accountIds) {
+      try {
+        const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+        if (splitBtn) {
+          splitBtn.click();
+          await new Promise(r => setTimeout(r, 300));
+        }
+        await fetch(WORKER_API + "/api/tasks/stop", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ account_id: accountId }),
+        });
+        await setAccountRunStatus(accountId, "idle", "", "");
+        runningSplits.delete(accountId);
+      } catch {}
+    }
+
+    if (!card._watching) return;
+
+    if (pauseMs === 0) {
+      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
+      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+      return;
+    }
+
+    let remaining = pauseMs;
+    const tick = () => {
+      if (!card._watching) return;
+      remaining -= 1000;
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      statusEl.textContent = `⏸ Перезапуск через: ${m}м ${s}с`;
+      if (remaining > 0) {
+        _timerIntervals[card.id] = setTimeout(tick, 1000);
+      } else {
+        restartSplits(accountIds);
+      }
+    };
+    _timerIntervals[card.id] = setTimeout(tick, 1000);
+  }
+
+  async function restartSplits(accountIds) {
+    if (!card._watching) return;
+    statusEl.textContent = `▶ Перезапускаю ${accountIds.length} сплитов...`;
+    for (const accountId of accountIds) {
+      try {
+        const splitBtn = document.querySelector(`.sqGroup[data-account-id="${accountId}"] .sqSplitBtn`);
+        if (splitBtn && !splitBtn.classList.contains("running")) splitBtn.click();
+        await new Promise(r => setTimeout(r, 300));
+      } catch {}
+    }
+    _timerIntervals[card.id] = setTimeout(() => {
+      const currentIds = getLinkedAccountIds();
+      if (currentIds.some(id => runningSplits.has(id))) {
+        startWorkCountdown(currentIds);
+      } else {
+        waitForSplit();
+      }
+    }, 2000);
+  }
+
+  waitForSplit();
+}
+
+function renderTimerCardsOnCanvas() {
+  try {
+    const raw = localStorage.getItem("claw_timer_cards");
+    if (raw) timerCards = JSON.parse(raw);
+  } catch {}
+  const container = document.getElementById("accountsList");
+  if (container) container.querySelectorAll(".sqTimerGroup").forEach(el => el.remove());
+  timerCards.filter(c => (c.platform || "Mamba") === activePlatform).forEach(card => {
+    renderTimerCard(card);
+  });
+}
+
+function renderAICardsOnCanvas() {
+  const container = document.getElementById("accountsList");
+  if (!container) return;
+
+  container.querySelectorAll(".sqAIGroup").forEach(el => el.remove());
+
+  analyticsCards.filter(card => (card.platform || "Mamba") === activePlatform).forEach(card => {
+    const group = document.createElement("div");
+    group.className = "sqAIGroup";
+    group.dataset.cardId = card.cardId;
+    group.dataset.accountId = "ai_" + card.cardId;
+    group.style.position = "absolute";
+    group.style.cursor = "grab";
+
+    const dot = document.createElement("div");
+    dot.className = "sqConnectDot";
+    dot.title = "Потяни чтобы соединить";
+    dot.style.cssText = "position:absolute;top:50%;right:-10px;transform:translateY(-50%);width:16px;height:16px;border-radius:50%;background:var(--accent3);border:2px solid var(--bg);cursor:crosshair;z-index:10;box-shadow:0 0 8px rgba(16,245,168,0.6);";
+    group.appendChild(dot);
+
+    const aCard = document.createElement("div");
+    aCard.className = "sqAnalyticsCard";
+    aCard.style.cssText = "min-width:160px;cursor:grab;position:relative;";
+    aCard.innerHTML = `
+      <button class="sqAIDeleteBtn" data-card-id="${card.cardId}" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#fb7185;cursor:pointer;font-size:14px;line-height:1;opacity:0.6;">✕</button>
+      <button class="sqAIEditBtn" data-card-id="${card.cardId}" style="position:absolute;top:6px;right:26px;background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:12px;line-height:1;opacity:0.6;">✎</button>
+      <div class="sqACardHead">AI</div>
+      <div class="sqACardName">${card.botName ? `${card.botName}, ${card.botAge}` : "Аналитик"}</div>
+      <div class="sqACardRow"><span class="sqALabel">Контакт</span><span class="sqAVal">${card.contacts || "—"}</span></div>
+    `;
+
+    aCard.querySelector(".sqAIDeleteBtn").onclick = async (e) => {
+      e.stopPropagation();
+      group.remove();
+      analyticsCards = analyticsCards.filter(c => c.cardId !== card.cardId);
+      // Чистим нитки связанные с этой AI-карточкой
+      const aiNodeId = "ai_" + card.cardId;
+      try {
+        const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+        const filtered = conns.filter(c => c.from !== aiNodeId && c.to !== aiNodeId);
+        localStorage.setItem("claw_connections", JSON.stringify(filtered));
+        if (window._clawDrawWeb) window._clawDrawWeb();
+      } catch {}
+      try {
+        await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(card.cardId)}`, { method: "DELETE" });
+      } catch {}
+    };
+
+    aCard.querySelector(".sqAIEditBtn").onclick = (e) => {
+      e.stopPropagation();
+      const saveBtn = document.getElementById("aModalSaveBtn");
+      document.getElementById("aModalBotName").value         = card.botName || "";
+      document.getElementById("aModalBotAge").value          = card.botAge || "";
+      document.getElementById("aModalBotGender").value       = card.botGender || "female";
+      document.getElementById("aModalLocation").value        = card.location || "";
+      document.getElementById("aModalContacts").value        = card.contacts || "";
+      document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
+      saveBtn.dataset.editCardId    = card.cardId;
+      saveBtn.dataset.editAccountId = card.accountId || "";
+      document.getElementById("analyticsModal").classList.add("open");
+    };
+
+    group.appendChild(aCard);
+
+
+    const saved = canvasPositions[`ai_${card.cardId}`];
+    if (saved) {
+      group.style.left = saved.x + "px";
+      group.style.top = saved.y + "px";
+    } else {
+      const x = (window._ctxSpawnX != null) ? window._ctxSpawnX : 700 + Math.random() * 200;
+      const y = (window._ctxSpawnY != null) ? window._ctxSpawnY : 100 + Math.random() * 200;
+      window._ctxSpawnX = null;
+      window._ctxSpawnY = null;
+      group.style.left = x + "px";
+      group.style.top = y + "px";
+      canvasPositions[`ai_${card.cardId}`] = { x, y };
+      saveCanvasPositions();
+    }
+
+    container.appendChild(group);
+  });
 }
 
 // ── Навигация ─────────────────────────────────────────────
@@ -1622,7 +2918,7 @@ function openPage(pageName) {
   const activePage = document.getElementById(`${pageName}Page`);
   if (activePage) {
     activePage.classList.add("activePage");
-    activePage.style.display = pageName === "tables" ? "flex" : "block";
+    activePage.style.display = (pageName === "tables" || pageName === "home") ? "flex" : "block";
     const appEl = document.querySelector(".app");
     if (pageName === "tables") {
       if (appEl) {
@@ -1822,10 +3118,19 @@ form.addEventListener("submit", async (event) => {
     failed ? "bad" : "good"
   );
 
+  // Прячем панель подключения после успешного подключения
+  if (!failed) {
+    setTimeout(() => {
+      const form = document.getElementById("connectForm");
+      if (form) form.style.display = "none";
+    }, 2000);
+  }
+
   // оставляем неудачные слоты на экране, удачные — очищаем форму
   if (!failed) {
     connectSlots.innerHTML = "";
     addConnectSlot();
+    loadKeySlots().then(() => autoAssignAllFreeSlots());
   }
 
   connectBtn.disabled    = false;
@@ -1885,6 +3190,7 @@ async function loadAnalyticsCards() {
     analyticsCards = (data.cards || []).map(c => ({
       cardId:          c.id,
       accountId:       c.account_id,
+      platform:        c.platform || "Mamba",
       botName:         c.bot_name || "",
       botAge:          c.bot_age || "",
       botGender:       c.bot_gender || "female",
@@ -1948,58 +3254,51 @@ function renderAnalyticsGrid(accounts) {
       deleteBtn._deleting = false;
     };
 
-    node.querySelector(".analyticsEditBtn").onclick = () => openAnalyticsModal(card.accountId, accounts);
+    node.querySelector(".analyticsEditBtn").onclick = () => openAnalyticsModal(card.accountId, accounts, card.cardId);
 
     analyticsGrid.appendChild(node);
   });
 }
 
 async function openAnalyticsModal(accountId, accounts) {
-  const card = accountId ? (analyticsCards.find(c => c.accountId === accountId) || {}) : {};
+  const saveBtn = document.getElementById("aModalSaveBtn");
 
-  document.getElementById("aModalAccountSelect").value   = card.accountId || "";
-  document.getElementById("aModalGroqKey").value         = card.groqKeys || card.groqKey || "";
-  document.getElementById("aModalGroqModel").value       = card.groqModel || "llama-3.3-70b-versatile";
-  document.getElementById("aModalBotName").value         = card.botName || "";
-  document.getElementById("aModalBotAge").value          = card.botAge || "";
-  document.getElementById("aModalBotGender").value       = card.botGender || "female";
-  document.getElementById("aModalLocation").value        = card.location || "";
-  document.getElementById("aModalPersona").value         = card.persona || "";
-  document.getElementById("aModalGoal").value            = card.goal || "";
-  document.getElementById("aModalStopTopics").value      = card.stopTopics || "";
-  document.getElementById("aModalContacts").value        = card.contacts || "";
-  document.getElementById("aModalContactsTrigger").value = card.contactsTrigger || "";
-  document.getElementById("aModalTgChatId").value        = "";
-
-  // Подтягиваем groq-настройки (включая tg_chat_id) отдельно, так как они хранятся в ai_settings
-  if (card.accountId) {
-    try {
-      const res = await fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(card.accountId)}`);
-      const data = await res.json();
-      if (data.settings) {
-        document.getElementById("aModalGroqModel").value = data.settings.groq_model || "llama-3.3-70b-versatile";
-        document.getElementById("aModalTgChatId").value  = data.settings.tg_chat_id || "";
-      }
-    } catch (err) {
-      console.error("load ai-settings for modal error:", err);
-    }
+  // Если accountId не передан — берём первый аккаунт активной платформы
+  let resolvedAccountId = accountId;
+  if (!resolvedAccountId && cachedAccounts.length) {
+    const platformAcc = cachedAccounts.find(a =>
+      (a.platform || "").toLowerCase() === (activePlatform || "").toLowerCase()
+    );
+    if (platformAcc) resolvedAccountId = platformAcc.id;
   }
 
-  const sel = document.getElementById("aModalAccountSelect");
-  sel.innerHTML = '<option value="">— выбери анкету —</option>';
-  accounts.forEach(a => {
-    const o = document.createElement("option");
-    o.value = a.id; o.textContent = a.name || a.id;
-    sel.appendChild(o);
-  });
-  if (card.accountId) sel.value = card.accountId;
+  saveBtn.dataset.editAccountId = resolvedAccountId || "";
+
+  // Грузим данные из ai_settings если есть accountId
+  let settings = {};
+  if (resolvedAccountId) {
+    try {
+      const res = await fetch(`/api/ai-settings/${encodeURIComponent(resolvedAccountId)}`);
+      const data = await res.json();
+      if (data.ok) settings = data.settings || {};
+    } catch(e) {}
+  }
+
+  // Фоллбэк на analyticsCards если ai_settings пустые
+  const card = accountId ? (analyticsCards.find(c => c.accountId === accountId) || {}) : {};
+
+  document.getElementById("aModalBotName").value         = settings.bot_name         || card.botName || "";
+  document.getElementById("aModalBotAge").value          = settings.bot_age           || card.botAge  || "";
+  document.getElementById("aModalBotGender").value       = settings.bot_gender        || card.botGender || "female";
+  document.getElementById("aModalLocation").value        = settings.location          || card.location || "";
+  document.getElementById("aModalContacts").value        = settings.contacts          || card.contacts || "";
+  document.getElementById("aModalContactsTrigger").value = settings.contacts_trigger  || card.contactsTrigger || "";
 
   document.getElementById("analyticsModal").classList.add("open");
 }
 
 addAnalyticsBtn?.addEventListener("click", async () => {
-  const accounts = await loadAccounts();
-  await openAnalyticsModal(null, accounts);
+  await openAnalyticsModal(null, cachedAccounts);
 });
 
 document.getElementById("analyticsModalClose")?.addEventListener("click", (e) => {
@@ -2007,98 +3306,65 @@ document.getElementById("analyticsModalClose")?.addEventListener("click", (e) =>
   document.getElementById("analyticsModal").classList.remove("open");
 });
 
-document.getElementById("analyticsModal")?.addEventListener("click", (e) => {
-  if (e.target === document.getElementById("analyticsModal")) {
-    document.getElementById("analyticsModal").classList.remove("open");
-  }
-});
+// закрытие только через крестик или кнопку сохранить
 
 document.getElementById("aModalSaveBtn")?.addEventListener("click", async () => {
-  const card = {
-    accountId:       document.getElementById("aModalAccountSelect").value,
-    groqKeys:        document.getElementById("aModalGroqKey").value.trim(),
-    groqKey:         document.getElementById("aModalGroqKey").value.trim(),
-    groqModel:       document.getElementById("aModalGroqModel").value.trim() || "llama-3.3-70b-versatile",
-    botName:         document.getElementById("aModalBotName").value.trim(),
-    botAge:          document.getElementById("aModalBotAge").value.trim(),
-    botGender:       document.getElementById("aModalBotGender").value,
-    location:        document.getElementById("aModalLocation").value.trim(),
-    persona:         document.getElementById("aModalPersona").value.trim(),
-    goal:            document.getElementById("aModalGoal").value.trim(),
-    stopTopics:      document.getElementById("aModalStopTopics").value.trim(),
-    contacts:        document.getElementById("aModalContacts").value.trim(),
-    contactsTrigger: document.getElementById("aModalContactsTrigger").value.trim(),
-    tgChatId:        document.getElementById("aModalTgChatId").value.trim(),
-    geminiKeys:      document.getElementById("aModalGeminiKeys").value.trim(),
-  };
+  const saveBtn = document.getElementById("aModalSaveBtn");
+  const targetAccountId = saveBtn.dataset.editAccountId || null;
 
-  if (!card.accountId) {
-    alert("Выбери анкету перед сохранением.");
-    return;
-  }
+  const botName         = document.getElementById("aModalBotName").value.trim();
+  const botAge          = document.getElementById("aModalBotAge").value.trim();
+  const botGender       = document.getElementById("aModalBotGender").value;
+  const location        = document.getElementById("aModalLocation").value.trim();
+  const contacts        = document.getElementById("aModalContacts").value.trim();
+  const contactsTrigger = document.getElementById("aModalContactsTrigger").value.trim();
 
+  // targetAccountId может быть пустым — карточка создаётся без привязки к анкете
+  // привязка происходит через нитку на канвасе
   try {
-    await fetch(WORKER_API + "/api/analytics-cards", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        account_id:       card.accountId,
-        groq_model:       card.groqModel,
-        bot_name:         card.botName,
-        bot_age:          card.botAge,
-        bot_gender:       card.botGender,
-        location:         card.location,
-        persona:          card.persona,
-        goal:             card.goal,
-        stop_topics:      card.stopTopics,
-        contacts:         card.contacts,
-        contacts_trigger: card.contactsTrigger,
-        tg_chat_id:       card.tgChatId,
-      }),
-    });
+    const editCardId = saveBtn.dataset.editCardId || null;
+    if (editCardId) {
+      // Обновляем существующую карточку
+      await fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(editCardId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger, platform: activePlatform }),
+      });
+    } else {
+      // Создаём новую карточку без привязки к анкете
+      const res = await fetch(WORKER_API + "/api/analytics-cards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: targetAccountId || null,
+          bot_name: botName, bot_age: botAge, bot_gender: botGender,
+          location, persona: "", goal: "", stop_topics: "",
+          contacts, contacts_trigger: contactsTrigger, tg_chat_id: "",
+          platform: activePlatform,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.detail || "Ошибка сохранения");
+    }
 
-    const aiSettingsRes = await fetch(
-  WORKER_API + `/api/ai-settings/${encodeURIComponent(card.accountId)}`,
-  {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      groq_api_key:      card.groqKey,
-      groq_api_keys:     card.groqKeys,
-      groq_model:        card.groqModel,
-      bot_name:          card.botName,
-      bot_age:           card.botAge,
-      bot_gender:        card.botGender,
-      location:          card.location,
-      persona:           card.persona,
-      goal:              card.goal,
-      stop_topics:       card.stopTopics,
-      contacts:          card.contacts,
-      contacts_trigger:  card.contactsTrigger,
-      tg_chat_id:        card.tgChatId,
-      gemini_api_keys:   card.geminiKeys,
-    }),
-  }
-);
-
-const aiSettingsData = await aiSettingsRes.json();
-
-if (!aiSettingsRes.ok || !aiSettingsData.ok) {
-  throw new Error(
-    aiSettingsData.detail ||
-    aiSettingsData.error ||
-    `Ошибка сохранения ключей: HTTP ${aiSettingsRes.status}`
-  );
-}
+    // Если есть привязанная анкета — синхронизируем в ai_settings
+    if (targetAccountId) {
+      await fetch(`/api/ai-settings/${encodeURIComponent(targetAccountId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bot_name: botName, bot_age: botAge, bot_gender: botGender, location, contacts, contacts_trigger: contactsTrigger }),
+      });
+    }
   } catch (err) {
-    console.error("save analytics card error:", err);
-    alert("Не удалось сохранить аналитика: " + err.message);
+    alert("Не удалось сохранить: " + err.message);
     return;
   }
 
   document.getElementById("analyticsModal").classList.remove("open");
   await loadAnalyticsCards();
-  const accounts = await loadAccounts();
-  renderAnalyticsGrid(accounts);
+  renderAICardsOnCanvas();
+  delete saveBtn.dataset.editAccountId;
+  delete saveBtn.dataset.editCardId;
 });
 
 // ── Модалки ───────────────────────────────────────────────
@@ -2123,7 +3389,7 @@ async function setAccountRunStatus(accountId, status, task = "", note = "", isBl
     if (isBlocked) body.is_blocked = true;
     const res = await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(accountId)}/run-status`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
       body: JSON.stringify(body),
     });
     if (!res.ok) console.warn("run-status не сохранился:", await res.text());
@@ -2289,6 +3555,7 @@ async function toggleSplit(accountId, splitBtn, splitInput, likesBtn, groqBtn, l
   }
 
   runningSplits.add(accountId);
+  if (window._clawStartAnim) window._clawStartAnim();
   window._splitLogs[accountId] = [];
   pushLog(accountId, "Сплит запущен");
   // Инициализируем живой счётчик из текущей статистики
@@ -2343,6 +3610,7 @@ async function runOneLikesStep(accountId, limit, resultEl, round) {
 
     if (likesData.blocked || status === "profile_blocked") {
       pushLog(accountId, "БЛОК — запускаю резерв");
+      await loadAccounts();
       return {
         blocked: true,
         reserve_account_id:
@@ -2420,6 +3688,8 @@ async function runOneChatsStep(accountId, resultEl, round, passLabel) {
 
     if (groqData.blocked || groqStatus === "profile_blocked") {
       pushLog(accountId, "БЛОК в чатах — запускаю резерв");
+      await loadAccounts();
+      renderSquareGridFromCache();
       return {
         blocked: true,
         reserve_account_id:
@@ -3141,14 +4411,142 @@ async function loadTeamMembers() {
   }
 }
 
+let keySlots = [];
+
+async function loadKeySlots() {
+  try {
+    const res = await fetch(WORKER_API + "/api/key-slots");
+    const data = await res.json();
+    keySlots = data.slots || [];
+    renderKeySlots();
+  } catch(e) { console.error("loadKeySlots error:", e); }
+}
+
+function renderKeySlots() {
+  const list = document.getElementById("keySlotsBody");
+  if (!list) return;
+  list.innerHTML = "";
+  if (!keySlots.length) {
+    list.innerHTML = '<div style="color:var(--text2);font:400 12px Space Grotesk,sans-serif;padding:12px 0;text-align:center;">Нет слотов — нажми +</div>';
+    return;
+  }
+  keySlots.forEach(slot => {
+    const keyCount = (slot.keys || "").split("\n").filter(k => k.trim()).length;
+    const isAssigned = !!slot.account_id;
+    const el = document.createElement("div");
+    el.style.cssText = "border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.02);";
+    el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font:600 12px Space Grotesk,sans-serif;color:var(--text);">' + slot.name + '</span><div style="display:flex;gap:6px;align-items:center;"><span style="font:400 11px Space Grotesk,sans-serif;color:' + (isAssigned ? "#10f5a8" : "var(--text2)") + ';">' + (isAssigned ? "✓ привязан" : "свободен") + '</span><button class="slotEditBtn" data-id="' + slot.id + '" style="background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:13px;">✎</button><button class="slotDeleteBtn" data-id="' + slot.id + '" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:13px;">✕</button></div></div>';
+    el.querySelector(".slotEditBtn").onclick = () => openKeySlotModal(slot);
+    el.querySelector(".slotDeleteBtn").onclick = async () => {
+      await fetch(WORKER_API + "/api/key-slots/" + slot.id, { method: "DELETE" });
+      loadKeySlots();
+    };
+    list.appendChild(el);
+  });
+}
+
+async function openKeySlotModal(slot = null) {
+  const form = document.getElementById("keySlotForm");
+  if (!form) return;
+  document.getElementById("keySlotName").value = slot ? slot.name : "";
+  document.getElementById("keySlotKeys").value = slot ? slot.keys : "";
+  document.getElementById("keySlotSaveBtn").dataset.slotId = slot ? slot.id : "";
+  form.classList.add("open");
+}
+
+async function autoAssignAllFreeSlots() {
+  const freeSlots = keySlots.filter(s => !s.account_id);
+  if (!freeSlots.length) return;
+
+  const accRes = await fetch(WORKER_API + "/api/accounts");
+  const accData = await accRes.json();
+  const accounts = accData.accounts || [];
+
+  for (const account of accounts) {
+    const settingsRes = await fetch(WORKER_API + "/api/ai-settings/" + encodeURIComponent(account.id));
+    const settingsData = await settingsRes.json();
+    const hasKeys = (settingsData.settings?.groq_api_keys || "").trim().length > 0;
+    if (hasKeys) continue;
+
+    const freeSlot = freeSlots.find(s => !s.account_id);
+    if (!freeSlot) break;
+
+    const keys = (freeSlot.keys || "").split("\n").filter(k => k.trim());
+    if (!keys.length) continue;
+
+    await fetch(WORKER_API + "/api/ai-settings/" + encodeURIComponent(account.id), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ groq_api_keys: keys.join("\n"), groq_api_key: keys[0] }),
+    });
+    await fetch(WORKER_API + "/api/key-slots/" + freeSlot.id + "/assign?account_id=" + encodeURIComponent(account.id), {
+      method: "POST",
+    });
+    freeSlot.account_id = account.id;
+  }
+  loadKeySlots();
+}
+
+async function autoAssignKeysToAccount(accountId) {
+  const freeSlot = keySlots.find(s => !s.account_id);
+  if (!freeSlot) return;
+  const keys = (freeSlot.keys || "").split("\n").filter(k => k.trim());
+  if (!keys.length) return;
+  await fetch(WORKER_API + "/api/ai-settings/" + encodeURIComponent(accountId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ groq_api_keys: keys.join("\n"), groq_api_key: keys[0] }),
+  });
+  await fetch(WORKER_API + "/api/key-slots/" + freeSlot.id + "/assign?account_id=" + encodeURIComponent(accountId), { method: "POST" });
+  loadKeySlots();
+}
+
 function startApp() {
   if (appStarted) return;
   appStarted = true;
+
+  document.getElementById("addKeySlotBtn").onclick = () => openKeySlotModal();
+  document.getElementById("keySlotModalClose").onclick = () => {
+    document.getElementById("keySlotForm").classList.remove("open");
+  };
+  document.getElementById("keySlotSaveBtn").onclick = async () => {
+    const saveBtn = document.getElementById("keySlotSaveBtn");
+    const slotId = saveBtn.dataset.slotId || null;
+    const name = document.getElementById("keySlotName").value.trim() || "Слот";
+    const keys = document.getElementById("keySlotKeys").value.trim();
+    if (slotId) {
+      await fetch(WORKER_API + "/api/key-slots/" + slotId, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, keys }),
+      });
+    } else {
+      await fetch(WORKER_API + "/api/key-slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, keys }),
+      });
+    }
+    document.getElementById("keySlotForm").classList.remove("open");
+    loadKeySlots();
+    autoAssignAllFreeSlots();
+  };
+
+  const _toggleBtn = document.getElementById("keysPanelToggle");
+  const _keysPanel = document.getElementById("keysPanel");
+  if (_toggleBtn && _keysPanel) {
+    _toggleBtn.onclick = () => {
+      const isOpen = _keysPanel.classList.contains("open");
+      _keysPanel.classList.toggle("open", !isOpen);
+      if (!isOpen) loadKeySlots();
+    };
+  }
 
   // Мгновенно показываем то что было закэшировано с прошлой сессии
   loadCachedAccountsInstantly();
 
   loadOperatorTabs();
+  initInfiniteCanvas();
 
   // Загружаем всё параллельно одним махом — никто никого не ждёт
   Promise.all([
@@ -3157,6 +4555,9 @@ function startApp() {
     loadTasksLog(),
   ]).then(([, accounts]) => {
     renderAnalyticsGrid(accounts);
+    renderAICardsOnCanvas();
+    renderTimerCardsOnCanvas();
+    renderProxyCardsOnCanvas();
 
     // После отображения карточек проверяем анкеты через HTTP
     refreshAccountStatuses();
@@ -3178,6 +4579,12 @@ function startApp() {
     }
   })();
 
+  const savedPlatform = localStorage.getItem("claw_active_platform");
+  if (savedPlatform) {
+    const btn = document.querySelector(`.platformBtn[data-platform="${savedPlatform}"]`);
+    if (btn) btn.click();
+  }
+
   openPage(savedPage || "home");
 
   document.getElementById("groqErrorClose")?.addEventListener("click", async () => {
@@ -3197,6 +4604,8 @@ function startApp() {
   setInterval(loadNotifications, 10000);
   setInterval(refreshAccountStatuses, 300000);
 }
+
+
 
 // ── ТАБЛИЦА (Google Sheets-style) ────────────────────────
 
@@ -4565,7 +5974,7 @@ async function renderChainModal() {
 async function saveChain(chain) {
   const res = await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(chainModalAccountId)}/chain`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
     body: JSON.stringify({ account_id: chainModalAccountId, chain }),
   });
 
