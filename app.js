@@ -1802,49 +1802,37 @@ function initInfiniteCanvas() {
     if (toId && toId !== lineFromId) {
       const exists = connections.find(c => (c.from===lineFromId&&c.to===toId)||(c.from===toId&&c.to===lineFromId));
       if (!exists) {
-        connections.push({ from: lineFromId, to: toId });
-        saveConnections();
         const aiId = lineFromId.startsWith("ai_") ? lineFromId : toId.startsWith("ai_") ? toId : null;
         const accountId = lineFromId.startsWith("ai_") ? toId : toId.startsWith("ai_") ? lineFromId : null;
-        
-        // Прокси нода
-        const proxyId = lineFromId.startsWith("proxy_") ? lineFromId : toId.startsWith("proxy_") ? toId : null;
-        const proxyAccountId = lineFromId.startsWith("proxy_") ? toId : toId.startsWith("proxy_") ? lineFromId : null;
-        if (proxyId && proxyAccountId && !proxyAccountId.startsWith("proxy_") && !proxyAccountId.startsWith("ai_") && !proxyAccountId.startsWith("timer_")) {
-          const proxyCard = proxyCards.find(c => c.id === proxyId);
-          if (proxyCard) {
-            fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccountId)}`).then(r=>r.json()).then(cur => {
-              fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccountId)}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
-                body: JSON.stringify({
-                  ...(cur.settings || {}),
-                  proxy_protocol: proxyCard.protocol,
-                  proxy_host: proxyCard.host,
-                  proxy_port: proxyCard.port,
-                  proxy_login: proxyCard.login,
-                  proxy_password: proxyCard.password,
-                  user_agent: proxyCard.userAgent,
-                }),
-              }).catch(() => {});
-            }).catch(() => {});
-          }
-        }
 
+        // ── Нитка от AI-менеджера к анкете — сперва проверяем слоты, ПОТОМ создаём нитку ──
         if (aiId && accountId && !accountId.startsWith("ai_") && !accountId.startsWith("timer_")) {
           const cardId = aiId.replace("ai_", "");
           const aiCard = analyticsCards.find(c => c.cardId === cardId);
           if (aiCard) {
-            aiCard.accountId = accountId;
-            fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ account_id: accountId }),
-            }).catch(() => {});
             fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(accountId)}`).then(r=>r.json()).then(cur => {
               loadKeySlots().then(() => {
-                const freeSlot = keySlots.find(s => !s.account_id);
-                const hasKeys = freeSlot ? false : (cur.settings?.groq_api_keys || "").trim().length > 0;
+                const hasKeys = (cur.settings?.groq_api_keys || "").trim().length > 0;
+                const freeSlot = hasKeys ? null : keySlots.find(s => !s.account_id);
+
+                if (!hasKeys && !freeSlot) {
+                  alert("Недостаточно слотов для ключей — добавь ещё слот перед подключением.");
+                  drawConnections();
+                  return; // нитку не создаём вообще
+                }
+
+                // Слот есть (или ключи уже назначены) — теперь можно рисовать нитку
+                connections.push({ from: lineFromId, to: toId });
+                saveConnections();
+                drawConnections();
+
+                aiCard.accountId = accountId;
+                fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(cardId)}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ account_id: accountId }),
+                }).catch(() => {});
+
                 fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(accountId)}`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -1865,6 +1853,36 @@ function initInfiniteCanvas() {
                     fetch(WORKER_API + "/api/key-slots/" + freeSlot.id + "/assign?account_id=" + encodeURIComponent(accountId), { method: "POST" }).catch(() => {});
                   }
                 }).catch(() => {});
+              }).catch(() => {});
+            }).catch(() => {});
+          } else {
+            drawConnections();
+          }
+          return; // эта ветка сама всё обработала — дальше (прокси/обычные нитки) не идём
+        }
+
+        // ── Остальные типы соединений (прокси, обычные нитки анкета↔анкета и т.п.) — без изменений ──
+        connections.push({ from: lineFromId, to: toId });
+        saveConnections();
+
+        const proxyId = lineFromId.startsWith("proxy_") ? lineFromId : toId.startsWith("proxy_") ? toId : null;
+        const proxyAccountId = lineFromId.startsWith("proxy_") ? toId : toId.startsWith("proxy_") ? lineFromId : null;
+        if (proxyId && proxyAccountId && !proxyAccountId.startsWith("proxy_") && !proxyAccountId.startsWith("ai_") && !proxyAccountId.startsWith("timer_")) {
+          const proxyCard = proxyCards.find(c => c.id === proxyId);
+          if (proxyCard) {
+            fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccountId)}`).then(r=>r.json()).then(cur => {
+              fetch(WORKER_API + `/api/ai-settings/${encodeURIComponent(proxyAccountId)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
+                body: JSON.stringify({
+                  ...(cur.settings || {}),
+                  proxy_protocol: proxyCard.protocol,
+                  proxy_host: proxyCard.host,
+                  proxy_port: proxyCard.port,
+                  proxy_login: proxyCard.login,
+                  proxy_password: proxyCard.password,
+                  user_agent: proxyCard.userAgent,
+                }),
               }).catch(() => {});
             }).catch(() => {});
           }
