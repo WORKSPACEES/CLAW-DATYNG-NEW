@@ -1388,14 +1388,12 @@ if (isIntCityCard && intCityFields) {
         }
 
         // ── Чистим нитки, которые указывали на эту анкету ──
-        for (let i = connections.length - 1; i >= 0; i--) {
-          const c = connections[i];
-          if (c.from === account.id || c.to === account.id) {
-            connections.splice(i, 1);
-          }
-        }
-        saveConnections();
-        drawConnections();
+        try {
+          const conns = JSON.parse(localStorage.getItem("claw_connections") || "[]");
+          const filtered = conns.filter(c => c.from !== account.id && c.to !== account.id);
+          localStorage.setItem("claw_connections", JSON.stringify(filtered));
+        } catch {}
+        if (window._clawDrawWeb) window._clawDrawWeb();
 
         // ── Отвязываем аналитик-карточку АИ-менеджера, если была привязана ──
         const aiCard = analyticsCards.find(c => c.accountId === account.id);
