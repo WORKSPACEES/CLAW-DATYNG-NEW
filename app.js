@@ -3799,8 +3799,7 @@ async function switchSplitToReserve(oldAccountId, blockResult, limit, resultEl, 
 }
 
 async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, livePollId, platform) {
-  const isLovelaz = (platform || "").toLowerCase() === "lovelaz";
-  const MAX_ROUNDS = isLovelaz ? Infinity : 5; // Lovelaz: бесконечный цикл без перезапуска
+  const MAX_ROUNDS = Infinity; // карточка крутится без остановки на всех платформах — стоп/рестарт только вручную или через ноду таймера
 
   // Heartbeat — если цикл завис, перезапускаем
   let lastHeartbeat = Date.now();
