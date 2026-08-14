@@ -1274,7 +1274,7 @@ if (isIntCityCard && intCityFields) {
 
   // Переопределяем сплит для intCity
   splitBtn.onclick = async () => {
-    if (runningSplits.has(account.id)) {
+    if (runningSplits.has(account.id) || account.run_status === "running") {
       runningSplits.delete(account.id);
       try {
         await fetch(WORKER_API + "/api/tasks/stop", {
@@ -1545,6 +1545,7 @@ async function refreshAccountStatuses() {
 // ── Infinite Canvas (pan/zoom/drag) ──────────────────────
 
 const CANVAS_STORAGE_KEY = "claw_canvas_positions";
+const CANVAS_TRANSFORM_KEY = "claw_canvas_transform";
 let canvasPositions = {}; // { [accountId]: { x, y } }
 let canvasTransform = { x: 0, y: 0, scale: 1 };
 
@@ -1559,6 +1560,21 @@ function saveCanvasPositions() {
   try { localStorage.setItem(CANVAS_STORAGE_KEY, JSON.stringify(canvasPositions)); } catch {}
 }
 
+function loadCanvasTransform() {
+  try {
+    const raw = localStorage.getItem(CANVAS_TRANSFORM_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw);
+      if (typeof saved.x === "number") canvasTransform.x = saved.x;
+      if (typeof saved.y === "number") canvasTransform.y = saved.y;
+      if (typeof saved.scale === "number") canvasTransform.scale = saved.scale;
+    }
+  } catch {}
+}
+
+function saveCanvasTransform() {
+  try { localStorage.setItem(CANVAS_TRANSFORM_KEY, JSON.stringify(canvasTransform)); } catch {}
+}
 function initInfiniteCanvas() {
   const wrapper = document.getElementById("canvasWrapper");
   const canvas = document.getElementById("webCanvas");
@@ -1566,6 +1582,7 @@ function initInfiniteCanvas() {
   if (!wrapper || !canvas || !container) return;
 
   loadCanvasPositions();
+  loadCanvasTransform();
 
   let isPanning = false;
   let isDragging = false;
@@ -1661,7 +1678,7 @@ function initInfiniteCanvas() {
   });
 
   window.addEventListener("mouseup", () => {
-    if (isPanning) { isPanning = false; wrapper.style.cursor = ""; }
+    if (isPanning) { isPanning = false; wrapper.style.cursor = ""; saveCanvasTransform(); }
     if (isDragging) { isDragging = false; dragGroup = null; saveCanvasPositions(); }
   });
 
@@ -1680,6 +1697,7 @@ function initInfiniteCanvas() {
     canvasTransform.y = mouseY - (mouseY - canvasTransform.y) * (newScale / canvasTransform.scale);
     canvasTransform.scale = newScale;
     applyTransform();
+    saveCanvasTransform();
   }, { passive: false });
 
   // Drag карточек (анкеты)
