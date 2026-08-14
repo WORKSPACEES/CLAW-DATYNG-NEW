@@ -310,6 +310,45 @@ def get_unsent_leads(owner_email: str, limit: int = 100) -> list[dict]:
     except Exception:
         return []
 
+def get_unsent_leads_by_source(owner_email: str, source: str, limit: int = 50) -> list[dict]:
+    """Возвращает неотправленные лиды только одного источника."""
+    try:
+        res = (
+            supabase.table("intcity_leads")
+            .select("*")
+            .eq("owner_email", owner_email)
+            .eq("source", source)
+            .is_("sent_at", "null")
+            .limit(limit)
+            .execute()
+        )
+        return res.data or []
+    except Exception:
+        return []
+
+async def _process_source(coro, owner_email, sender_email, subject, body, mail_cookie, mail_token, should_cancel_fn, source_name, send_limit=25):
+    try:
+        found = await coro
+    except Exception as e:
+        print(f"[INTCITY] Источник {source_name} упал: {e}", flush=True)
+        return {"parsed": 0, "saved": 0, "sent": 0}
+
+    saved = save_leads(found, owner_email)
+    print(f"[INTCITY] ({source_name}) Сохранено новых: {saved}", flush=True)
+
+    if should_cancel_fn():
+        return {"parsed": len(found), "saved": saved, "sent": 0}
+
+    leads = get_unsent_leads_by_source(owner_email, source_name, limit=send_limit)
+    print(f"[INTCITY] ({source_name}) Неотправленных лидов: {len(leads)}", flush=True)
+    if not leads:
+        return {"parsed": len(found), "saved": saved, "sent": 0}
+
+    print(f"[INTCITY] ({source_name}) Запускаем send_emails: sender={sender_email!r}, leads={len(leads)}", flush=True)
+    result = send_emails(sender_email, "", leads, subject, body, mail_cookie, mail_token)
+    print(f"[INTCITY] ({source_name}) send_emails результат: {result}", flush=True)
+    return {"parsed": len(found), "saved": saved, "sent": result.get("sent", 0)}
+
 def mark_as_sent(lead_id: int):
     try:
         supabase.table("intcity_leads").update({
@@ -468,47 +507,38 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
     if should_cancel_fn():
         return {"ok": True, "status": "stopped_by_user", "summary": "Остановлено"}
 
-    # Парсим оба источника (intimcity.co + soderganki.ru)
-    print(f"[INTCITY] Парсим {pages} страниц с обоих источников...", flush=True)
+    # Парсим и рассылаем по каждому источнику НЕЗАВИСИМО — soderganki не должен
+    # ждать, пока домучается intimcity.co (и наоборот)
+    print(f"[INTCITY] Парсим и рассылаем по обоим источникам параллельно...", flush=True)
+
+    async def _run_both():
+        return await asyncio.gather(
+            _process_source(parse_intcity(pages=pages), owner_email, sender_email, subject, body, mail_cookie, mail_token, should_cancel_fn, "intimcity", send_limit=25),
+            _process_source(parse_soderganki(pages=pages), owner_email, sender_email, subject, body, mail_cookie, mail_token, should_cancel_fn, "soderganki", send_limit=50),
+            return_exceptions=True,
+        )
+
     loop = asyncio.new_event_loop()
-    found = loop.run_until_complete(parse_all_sources(pages=pages))
+    results = loop.run_until_complete(_run_both())
     loop.close()
 
-    if should_cancel_fn():
-        return {"ok": True, "status": "stopped_by_user", "summary": "Остановлено"}
-
-    # Сохраняем
-    saved = save_leads(found, owner_email)
-    print(f"[INTCITY] Сохранено новых: {saved}", flush=True)
-
-    # Получаем неотправленных
-    leads = get_unsent_leads(owner_email, limit=50)
-    print(f"[INTCITY] Неотправленных лидов: {len(leads)}", flush=True)
-
-    if not leads:
-        return {
-            "ok": True,
-            "parsed": len(found),
-            "saved": saved,
-            "sent": 0,
-            "summary": f"Спарсено {len(found)} email, новых нет — все уже получили письмо"
-        }
-
-    if should_cancel_fn():
-        return {"ok": True, "status": "stopped_by_user", "summary": "Остановлено"}
-
-    # Отправляем
-    print(f"[INTCITY] Запускаем send_emails: sender={sender_email!r}, leads={len(leads)}", flush=True)
-    result = send_emails(sender_email, "", leads, subject, body, mail_cookie, mail_token)
-    print(f"[INTCITY] send_emails результат: {result}", flush=True)
+    total_parsed = 0
+    total_saved = 0
+    total_sent = 0
+    for r in results:
+        if isinstance(r, Exception):
+            print(f"[INTCITY] Ошибка обработки источника: {r}", flush=True)
+            continue
+        total_parsed += r.get("parsed", 0)
+        total_saved += r.get("saved", 0)
+        total_sent += r.get("sent", 0)
 
     return {
-        "ok": result["ok"],
-        "parsed": len(found),
-        "saved": saved,
-        "sent": result.get("sent", 0),
-        "errors": result.get("errors", [])[:5],
-        "summary": f"Спарсено {len(found)}, сохранено {saved}, отправлено {result.get('sent', 0)}"
+        "ok": True,
+        "parsed": total_parsed,
+        "saved": total_saved,
+        "sent": total_sent,
+        "summary": f"Спарсено {total_parsed}, сохранено {total_saved}, отправлено {total_sent}"
     }
 
 
