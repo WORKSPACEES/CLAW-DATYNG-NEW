@@ -2422,13 +2422,20 @@ function renderSquareGrid(accounts, statsMap) {
   // Добавляем/обновляем только изменившиеся
   filtered.forEach((account, idx) => {
     const stats = statsMap[account.id] || { liked: 0, replied: 0, contacts: 0 };
+    const isBlockedNow = account.is_blocked === true || String(account.is_blocked).toLowerCase() === "true";
     const existing = accountsList.querySelector(`.sqGroup[data-account-id="${account.id}"]`);
-    if (existing) return; // уже есть — не трогаем
+
+    if (existing) {
+      const wasBlocked = existing.dataset.blocked === "1";
+      if (wasBlocked === isBlockedNow) return; // статус блокировки не менялся — не трогаем
+      existing.remove(); // статус изменился (заблокировали/разблокировали) — пересоздаём карточку целиком
+    }
 
     const analyst = analyticsCards.find(c => c.accountId === account.id);
     const group = document.createElement("div");
     group.className = "sqGroup";
     group.dataset.accountId = account.id;
+    group.dataset.blocked = isBlockedNow ? "1" : "0";
 
     const node = createSquareCard(account, stats);
     group.appendChild(node);
