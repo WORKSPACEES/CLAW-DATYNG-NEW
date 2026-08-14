@@ -1080,6 +1080,7 @@ if (isLoggedOut) {
 }
 
 const isTeamRunning = account.run_status === "running";
+let isCurrentlyRunning = isTeamRunning; // живой флаг, в отличие от account.run_status — его можно обновлять по ходу кликов
 
 if (isTeamRunning) {
   cardEl.classList.add("sqActive");
@@ -1137,7 +1138,8 @@ if (groqBtn.onclick !== undefined) groqBtn.onclick = () => runGroq(account.id, s
   splitBtn.onclick = async () => {
   const limit = Math.max(1, Math.min(50, Number(splitInput.value) || 10));
 
-  if (account.run_status === "running" && !runningSplits.has(account.id)) {
+  if (isCurrentlyRunning && !runningSplits.has(account.id)) {
+    isCurrentlyRunning = false;
     if (sqResultEl) {
       sqResultEl.textContent = "Останавливаю...";
       sqResultEl.className = "sqResult";
@@ -1175,6 +1177,7 @@ if (groqBtn.onclick !== undefined) groqBtn.onclick = () => runGroq(account.id, s
     return;
   }
 
+  isCurrentlyRunning = true;
   splitBtn.classList.add("running");
   splitBtn.innerHTML = "⏹ Стоп";
   splitBtn.disabled = false;
@@ -1274,8 +1277,9 @@ if (isIntCityCard && intCityFields) {
 
   // Переопределяем сплит для intCity
   splitBtn.onclick = async () => {
-    if (runningSplits.has(account.id) || account.run_status === "running") {
+    if (runningSplits.has(account.id) || isCurrentlyRunning) {
       runningSplits.delete(account.id);
+      isCurrentlyRunning = false;
       try {
         await fetch(WORKER_API + "/api/tasks/stop", {
           method: "POST",
@@ -1301,6 +1305,7 @@ if (isIntCityCard && intCityFields) {
     if (!body) { alert("Введи текст письма"); return; }
 
     runningSplits.add(account.id);
+    isCurrentlyRunning = true;
     await setAccountRunStatus(account.id, "running", "split", "Рассылка запущена");
     splitBtn.classList.add("running");
     splitBtn.innerHTML = "⏹ Стоп";
