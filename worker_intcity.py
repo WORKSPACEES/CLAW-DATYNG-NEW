@@ -137,7 +137,6 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
     }
 
     found = []
-    prev_bb_sig = None
 
     async with httpx.AsyncClient(headers=headers, timeout=30, follow_redirects=True) as client:
         for page in range(1, pages + 1):
@@ -151,13 +150,6 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
                 if not bb_contacts:
                     print(f"[INTCITY] Страница {page}: пустая — объявления закончились, останавливаюсь", flush=True)
                     break
-
-                bb_sig = frozenset(bb_contacts)
-                if prev_bb_sig is not None and bb_sig == prev_bb_sig:
-                    print(f"[INTCITY] Страница {page}: содержимое совпадает с предыдущей страницей (сайт перестал листать дальше) — останавливаюсь", flush=True)
-                    break
-                prev_bb_sig = bb_sig
-
                 email_pattern = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
                 page_emails = 0
                 for contact in bb_contacts:
@@ -198,7 +190,6 @@ async def parse_soderganki(pages: int = 3) -> list[dict]:
     email_pattern = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
     article_pattern = re.compile(r'<article\b[^>]*>(.*?)</article>', re.DOTALL)
     link_pattern = re.compile(r'<a[^>]+href="([^"]+)"[^>]*class="[^"]*more-link[^"]*"')
-    prev_ad_urls_sig = None
 
     async with httpx.AsyncClient(headers=headers, timeout=30, follow_redirects=True) as client:
         for page in range(1, pages + 1):
@@ -211,14 +202,6 @@ async def parse_soderganki(pages: int = 3) -> list[dict]:
                 if not articles:
                     print(f"[SODERGANKI] Страница {page}: пустая — объявления закончились, останавливаюсь", flush=True)
                     break
-
-                ad_urls_this_page = frozenset(
-                    m.group(1) for a in articles for m in [link_pattern.search(a)] if m
-                )
-                if prev_ad_urls_sig is not None and ad_urls_this_page and ad_urls_this_page == prev_ad_urls_sig:
-                    print(f"[SODERGANKI] Страница {page}: содержимое совпадает с предыдущей страницей (сайт перестал листать дальше) — останавливаюсь", flush=True)
-                    break
-                prev_ad_urls_sig = ad_urls_this_page
 
                 page_emails = 0
                 for article_html in articles:
