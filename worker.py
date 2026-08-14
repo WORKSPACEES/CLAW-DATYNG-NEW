@@ -478,24 +478,45 @@ def is_key_exhausted(error_msg: str) -> bool:
         "account is", "disabled",
     ])
 
+OPENROUTER_FALLBACK_MODEL = "meta-llama/llama-3.3-70b-instruct"  # если модель в настройках — groq-формата, а ключ openrouter
+
+def _is_openrouter_key(api_key: str) -> bool:
+    return (api_key or "").strip().lower().startswith("sk-or-")
+
 def call_groq(api_key: str, model: str, system_prompt: str, messages: list[dict]) -> str:
     if not api_key:
         raise ValueError("Groq API ключ не задан в настройках анкеты")
 
-    payload = json.dumps({
-        "model": model or "llama-3.1-8b-instant",
+    is_openrouter = _is_openrouter_key(api_key)
+    use_model = model or "llama-3.1-8b-instant"
+    if is_openrouter and "/" not in use_model:
+        # модель настроена в groq-формате (без "/") — она не подойдёт для OpenRouter, берём дефолтную
+        use_model = OPENROUTER_FALLBACK_MODEL
+
+    body_data = {
+        "model": use_model,
         "messages": [{"role": "system", "content": system_prompt}] + messages,
         "temperature": 0.8,
-        "max_completion_tokens": 80,
-    }, ensure_ascii=False).encode("utf-8")
+    }
+    body_data["max_tokens" if is_openrouter else "max_completion_tokens"] = 80
+    payload = json.dumps(body_data, ensure_ascii=False).encode("utf-8")
 
-    conn = http.client.HTTPSConnection("api.groq.com", timeout=30)
+    host = "openrouter.ai" if is_openrouter else "api.groq.com"
+    path = "/api/v1/chat/completions" if is_openrouter else "/openai/v1/chat/completions"
+    provider_label = "OPENROUTER" if is_openrouter else "GROQ"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+        "Content-Length": str(len(payload)),
+    }
+    if is_openrouter:
+        headers["HTTP-Referer"] = "https://claw-ai-manager.local"
+        headers["X-Title"] = "CLAW-AI Manager"
+
+    conn = http.client.HTTPSConnection(host, timeout=30)
     try:
-        conn.request("POST", "/openai/v1/chat/completions", body=payload, headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
-            "Content-Length": str(len(payload)),
-        })
+        conn.request("POST", path, body=payload, headers=headers)
         resp = conn.getresponse()
         body = resp.read().decode("utf-8", errors="ignore")
     finally:
@@ -504,12 +525,12 @@ def call_groq(api_key: str, model: str, system_prompt: str, messages: list[dict]
     data = json.loads(body)
 
     if resp.status >= 400:
-        err_msg = (data.get("error") or {}).get("message") or f"Groq error {resp.status}"
-        print("[GROQ RAW ERROR]", err_msg, flush=True)
+        err_msg = (data.get("error") or {}).get("message") or f"{provider_label} error {resp.status}"
+        print(f"[{provider_label} RAW ERROR]", err_msg, flush=True)
         if resp.status == 429:
-            save_groq_error(f"Groq лимит: {err_msg}")
+            save_groq_error(f"{provider_label} лимит: {err_msg}")
         else:
-            save_groq_error(f"Groq ошибка: {err_msg}")
+            save_groq_error(f"{provider_label} ошибка: {err_msg}")
         raise RuntimeError(err_msg)
 
     content = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
@@ -1274,9 +1295,6 @@ async def pw_run_chat_task(page, settings: dict, account_id: str) -> dict:
                         "привет, встречи на мат основе интересуют ?",
                     ]
                     first_msg = random.choice(_greetings)
-                    contacts = settings.get("contacts", "")
-                    if contacts:
-                        first_msg = first_msg.rstrip() + " " + contacts
 
                     if first_msg:
                         input_el = await page.wait_for_selector(
