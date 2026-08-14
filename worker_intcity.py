@@ -147,6 +147,9 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
 
                 # Берём всё содержимое data-bbcontact, потом вытаскиваем email
                 bb_contacts = re.findall(r'data-bbcontact="([^"]*)"', html)
+                if not bb_contacts:
+                    print(f"[INTCITY] Страница {page}: пустая — объявления закончились, останавливаюсь", flush=True)
+                    break
                 email_pattern = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
                 page_emails = 0
                 for contact in bb_contacts:
@@ -195,8 +198,13 @@ async def parse_soderganki(pages: int = 3) -> list[dict]:
                 resp = await client.get(url)
                 html = resp.text
 
+                articles = article_pattern.findall(html)
+                if not articles:
+                    print(f"[SODERGANKI] Страница {page}: пустая — объявления закончились, останавливаюсь", flush=True)
+                    break
+
                 page_emails = 0
-                for article_html in article_pattern.findall(html):
+                for article_html in articles:
                     # Достаём чистый текст объявления (без тегов), чтобы проверить город и пол
                     plain_text = re.sub(r'<[^>]+>', ' ', article_html).lower()
                     is_moscow = "москв" in plain_text          # москва / москве / москвы
