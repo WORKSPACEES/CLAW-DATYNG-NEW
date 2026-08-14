@@ -208,8 +208,9 @@ async def parse_soderganki(pages: int = 3) -> list[dict]:
                     # Достаём чистый текст объявления (без тегов), чтобы проверить город и пол
                     plain_text = re.sub(r'<[^>]+>', ' ', article_html).lower()
                     is_moscow = "москв" in plain_text          # москва / москве / москвы
-                    is_man = "мужчин" in plain_text            # мужчина / мужчины / мужчин
-                    if not (is_moscow and is_man):
+                    # Источник уже отфильтрован по тегу "мужчины" в самом URL,
+                    # поэтому требуем только упоминание Москвы в тексте объявления.
+                    if not is_moscow:
                         continue
 
                     link_match = link_pattern.search(article_html)
@@ -253,7 +254,6 @@ async def parse_all_sources(pages: int = 3) -> list[dict]:
     return found
 
 def save_leads(found: list[dict], owner_email: str) -> int:
-    """Сохраняет новые email в intcity_leads, возвращает кол-во новых."""
     saved = 0
     for item in found:
         try:
@@ -261,6 +261,7 @@ def save_leads(found: list[dict], owner_email: str) -> int:
                 "email": item["email"],
                 "ad_url": item["ad_url"],
                 "owner_email": owner_email,
+                "source": item.get("source", ""),
             }, on_conflict="email").execute()
             saved += 1
         except Exception as e:
@@ -269,20 +270,37 @@ def save_leads(found: list[dict], owner_email: str) -> int:
 
 
 def get_unsent_leads(owner_email: str, limit: int = 100) -> list[dict]:
-    """Возвращает лиды которым ещё не отправляли письма."""
+    """Возвращает лиды которым ещё не отправляли письма — раздельными квотами по источникам,
+    чтобы редкий источник (soderganki) не тонул за счёт массового (intimcity)."""
     try:
-        res = (
+        half = max(1, limit // 2)
+
+        soderganki_res = (
             supabase.table("intcity_leads")
             .select("*")
             .eq("owner_email", owner_email)
+            .eq("source", "soderganki")
             .is_("sent_at", "null")
-            .limit(limit)
+            .limit(half)
             .execute()
         )
-        return res.data or []
+        soderganki_leads = soderganki_res.data or []
+
+        remaining = limit - len(soderganki_leads)
+        intimcity_res = (
+            supabase.table("intcity_leads")
+            .select("*")
+            .eq("owner_email", owner_email)
+            .neq("source", "soderganki")
+            .is_("sent_at", "null")
+            .limit(remaining)
+            .execute()
+        )
+        intimcity_leads = intimcity_res.data or []
+
+        return soderganki_leads + intimcity_leads
     except Exception:
         return []
-
 
 def mark_as_sent(lead_id: int):
     try:
