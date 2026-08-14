@@ -174,6 +174,76 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
     return unique
 
 
+async def parse_soderganki(pages: int = 3) -> list[dict]:
+    """Парсит объявления с soderganki.ru (тег 'мужчины') — email прямо в тексте объявления."""
+    BASE_URL = "https://soderganki.ru/archives/tag/muzhchiny"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "ru-RU,ru;q=0.9",
+        "Referer": BASE_URL + "/",
+    }
+
+    found = []
+    email_pattern = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+    article_pattern = re.compile(r'<article\b[^>]*>(.*?)</article>', re.DOTALL)
+    link_pattern = re.compile(r'<a[^>]+href="([^"]+)"[^>]*class="[^"]*more-link[^"]*"')
+
+    async with httpx.AsyncClient(headers=headers, timeout=30, follow_redirects=True) as client:
+        for page in range(1, pages + 1):
+            try:
+                url = BASE_URL + "/" if page == 1 else f"{BASE_URL}/page/{page}/"
+                resp = await client.get(url)
+                html = resp.text
+
+                page_emails = 0
+                for article_html in article_pattern.findall(html):
+                    # Достаём чистый текст объявления (без тегов), чтобы проверить город и пол
+                    plain_text = re.sub(r'<[^>]+>', ' ', article_html).lower()
+                    is_moscow = "москв" in plain_text          # москва / москве / москвы
+                    is_man = "мужчин" in plain_text            # мужчина / мужчины / мужчин
+                    if not (is_moscow and is_man):
+                        continue
+
+                    link_match = link_pattern.search(article_html)
+                    ad_url = link_match.group(1) if link_match else url
+                    for email in email_pattern.findall(article_html):
+                        email = email.strip().lower()
+                        if email and not any(x in email for x in ["soderganki", "wordpress", "sentry", "example", "test", "gravatar"]):
+                            found.append({"email": email, "ad_url": ad_url})
+                            page_emails += 1
+
+                print(f"[SODERGANKI] Страница {page}: {page_emails} валидных email", flush=True)
+
+            except Exception as e:
+                print(f"[SODERGANKI] Ошибка страницы {page}: {e}", flush=True)
+
+    # Дедупликация
+    seen = set()
+    unique = []
+    for item in found:
+        if item["email"] not in seen:
+            seen.add(item["email"])
+            unique.append(item)
+
+    print(f"[SODERGANKI] Всего уникальных email: {len(unique)}", flush=True)
+    return unique
+
+
+async def parse_all_sources(pages: int = 3) -> list[dict]:
+    """Парсит intimcity.co и soderganki.ru параллельно, объединяет результат."""
+    results = await asyncio.gather(
+        parse_intcity(pages=pages),
+        parse_soderganki(pages=pages),
+        return_exceptions=True,
+    )
+    found = []
+    for r in results:
+        if isinstance(r, Exception):
+            print(f"[INTCITY] Источник парсинга упал: {r}", flush=True)
+            continue
+        found.extend(r)
+    return found
+
 def save_leads(found: list[dict], owner_email: str) -> int:
     """Сохраняет новые email в intcity_leads, возвращает кол-во новых."""
     saved = 0
@@ -362,10 +432,10 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
     if should_cancel_fn():
         return {"ok": True, "status": "stopped_by_user", "summary": "Остановлено"}
 
-    # Парсим
-    print(f"[INTCITY] Парсим {pages} страниц...", flush=True)
+    # Парсим оба источника (intimcity.co + soderganki.ru)
+    print(f"[INTCITY] Парсим {pages} страниц с обоих источников...", flush=True)
     loop = asyncio.new_event_loop()
-    found = loop.run_until_complete(parse_intcity(pages=pages))
+    found = loop.run_until_complete(parse_all_sources(pages=pages))
     loop.close()
 
     if should_cancel_fn():
