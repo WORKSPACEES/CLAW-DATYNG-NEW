@@ -62,6 +62,11 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 TELEGRAM_BOT_TOKEN = "8743731775:AAE3jy3zZOTaM8rYXie7LHmgfXduV9IY06g"
 
+# ── Прокси для Lovelaz ──
+PROXY_SERVER = "http://154.212.31.246:62670"
+PROXY_USERNAME = "hBeZwcdSM"
+PROXY_PASSWORD = "tXsEa8hci"
+
 MIN_AGE = 30
 
 # Сколько задач воркер может выполнять ОДНОВРЕМЕННО (параллельно).
@@ -744,7 +749,15 @@ async def screenshot(page, name: str):
 async def make_browser_context(cookies: list[dict]):
     from playwright.async_api import async_playwright
     pw = await async_playwright().start()
-    browser = await pw.chromium.launch(headless=True, args=["--no-sandbox"])
+    browser = await pw.chromium.launch(
+        headless=True,
+        args=["--no-sandbox"],
+        proxy={
+            "server": PROXY_SERVER,
+            "username": PROXY_USERNAME,
+            "password": PROXY_PASSWORD,
+        },
+    )
     context = await browser.new_context(
         user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/148.0.0.0 Safari/537.36",
         locale="ru-RU",
