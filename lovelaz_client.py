@@ -18,9 +18,14 @@ _build_id_cache: dict[str, tuple] = {}
 _BUILD_ID_TTL = 300  # секунд
 WS_ORIGIN = "https://lovelaz.ru"
 
-from proxy_loader import get_proxy as _get_proxy
 def _proxy():
-    return _get_proxy("lovelaz")
+    return {
+        "use_proxy": True,
+        "host": "154.212.31.246",
+        "port": 62670,
+        "username": "hBeZwcdSM",
+        "password": "tXsEa8hci",
+    }
 
 
 def parse_cookies(raw: str) -> dict:
