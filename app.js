@@ -1378,6 +1378,36 @@ if (isIntCityCard && intCityFields) {
             body: JSON.stringify({ account_id: account.id }),
           });
         } catch {}
+
+        // ── Освобождаем привязанный слот ключей, если был ──
+        const boundSlot = keySlots.find(s => s.account_id === account.id);
+        if (boundSlot) {
+          boundSlot.account_id = null;
+          renderKeySlots();
+          fetch(WORKER_API + "/api/key-slots/release/" + encodeURIComponent(account.id), { method: "POST" }).catch(() => {});
+        }
+
+        // ── Чистим нитки, которые указывали на эту анкету ──
+        for (let i = connections.length - 1; i >= 0; i--) {
+          const c = connections[i];
+          if (c.from === account.id || c.to === account.id) {
+            connections.splice(i, 1);
+          }
+        }
+        saveConnections();
+        drawConnections();
+
+        // ── Отвязываем аналитик-карточку АИ-менеджера, если была привязана ──
+        const aiCard = analyticsCards.find(c => c.accountId === account.id);
+        if (aiCard) {
+          aiCard.accountId = null;
+          fetch(WORKER_API + `/api/analytics-cards/${encodeURIComponent(aiCard.cardId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account_id: null }),
+          }).catch(() => {});
+        }
+
         await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
       } catch (err) {
         alert("Не удалось удалить: " + err.message);
