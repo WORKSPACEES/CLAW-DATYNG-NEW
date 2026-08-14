@@ -137,6 +137,7 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
     }
 
     found = []
+    prev_bb_sig = None
 
     async with httpx.AsyncClient(headers=headers, timeout=30, follow_redirects=True) as client:
         for page in range(1, pages + 1):
@@ -150,6 +151,15 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
                 if not bb_contacts:
                     print(f"[INTCITY] Страница {page}: пустая — объявления закончились, останавливаюсь", flush=True)
                     break
+
+                # Защита от дублей: если сайт вернул то же самое содержимое, что и на прошлой
+                # странице (реальные страницы закончились, но сайт молча отдаёт последнюю снова) — стоп
+                bb_sig = frozenset(bb_contacts)
+                if prev_bb_sig is not None and bb_sig == prev_bb_sig:
+                    print(f"[INTCITY] Страница {page}: содержимое совпадает с предыдущей страницей — реальные страницы закончились, останавливаюсь", flush=True)
+                    break
+                prev_bb_sig = bb_sig
+
                 email_pattern = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
                 page_emails = 0
                 for contact in bb_contacts:
@@ -157,7 +167,7 @@ async def parse_intcity(pages: int = 3) -> list[dict]:
                     for email in emails_in_contact:
                         email = email.strip().lower()
                         if email and not any(x in email for x in ["intimcity", "example", "sentry", "test"]):
-                            found.append({"email": email, "ad_url": url})
+                            found.append({"email": email, "ad_url": url, "source": "intimcity"})
                             page_emails += 1
 
                 print(f"[INTCITY] Страница {page}: {page_emails} валидных email из {len(bb_contacts)} контактов", flush=True)
@@ -218,7 +228,7 @@ async def parse_soderganki(pages: int = 3) -> list[dict]:
                     for email in email_pattern.findall(article_html):
                         email = email.strip().lower()
                         if email and not any(x in email for x in ["soderganki", "wordpress", "sentry", "example", "test", "gravatar"]):
-                            found.append({"email": email, "ad_url": ad_url})
+                            found.append({"email": email, "ad_url": ad_url, "source": "soderganki"})
                             page_emails += 1
 
                 print(f"[SODERGANKI] Страница {page}: {page_emails} валидных email", flush=True)
@@ -270,8 +280,6 @@ def save_leads(found: list[dict], owner_email: str) -> int:
 
 
 def get_unsent_leads(owner_email: str, limit: int = 100) -> list[dict]:
-    """Возвращает лиды которым ещё не отправляли письма — раздельными квотами по источникам,
-    чтобы редкий источник (soderganki) не тонул за счёт массового (intimcity)."""
     try:
         half = max(1, limit // 2)
 
@@ -389,7 +397,9 @@ def send_emails(
             print(f"[INTCITY] mail.ru status={resp.status_code} body={resp.text[:200]}", flush=True)
             if resp.status_code == 200:
                 data = resp.json()
-                if data.get("status") == "ok" or data.get("id"):
+                body_data = data.get("body") or {}
+                ok_status = data.get("status") in ("ok", 200) or data.get("id") or body_data.get("id")
+                if ok_status:
                     mark_as_sent(lead["id"])
                     sent += 1
                     print(f"[INTCITY] ✓ Отправлено → {lead['email']}", flush=True)
