@@ -1138,8 +1138,9 @@ if (groqBtn.onclick !== undefined) groqBtn.onclick = () => runGroq(account.id, s
   splitBtn.onclick = async () => {
   const limit = Math.max(1, Math.min(50, Number(splitInput.value) || 10));
 
-  if (isCurrentlyRunning && !runningSplits.has(account.id)) {
+  if (isCurrentlyRunning || runningSplits.has(account.id)) {
     isCurrentlyRunning = false;
+    runningSplits.delete(account.id);
     if (sqResultEl) {
       sqResultEl.textContent = "Останавливаю...";
       sqResultEl.className = "sqResult";
@@ -1156,7 +1157,6 @@ if (groqBtn.onclick !== undefined) groqBtn.onclick = () => runGroq(account.id, s
     }
 
     await setAccountRunStatus(account.id, "idle", "", "");
-    runningSplits.delete(account.id);
 
     splitBtn.classList.remove("running");
     splitBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg> Сплит';
