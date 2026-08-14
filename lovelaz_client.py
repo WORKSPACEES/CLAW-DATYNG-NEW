@@ -19,13 +19,7 @@ _BUILD_ID_TTL = 300  # секунд
 WS_ORIGIN = "https://lovelaz.ru"
 
 def _proxy():
-    return {
-        "use_proxy": True,
-        "host": "154.212.31.246",
-        "port": 62670,
-        "username": "hBeZwcdSM",
-        "password": "tXsEa8hci",
-    }
+    return {"use_proxy": False}
 
 
 def parse_cookies(raw: str) -> dict:
