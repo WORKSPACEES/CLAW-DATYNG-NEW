@@ -2807,6 +2807,15 @@ function watchTimerCard(card, statusEl, startBtn) {
     let remaining = workMs;
     const tick = () => {
       if (!card._watching) return;
+
+      // ── Проверяем, что сплит реально ещё бежит ──
+      const stillRunning = accountIds.some(id => runningSplits.has(id));
+      if (!stillRunning) {
+        statusEl.textContent = `⚠ Сплит остановился раньше времени, проверяю заново...`;
+        waitForSplit();
+        return;
+      }
+
       remaining -= 1000;
       const m = Math.floor(remaining / 60000);
       const s = Math.floor((remaining % 60000) / 1000);
@@ -2842,8 +2851,8 @@ function watchTimerCard(card, statusEl, startBtn) {
     if (!card._watching) return;
 
     if (pauseMs === 0) {
-      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
-      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+      statusEl.textContent = `▶ Пауза 0 — перезапускаю сразу...`;
+      restartSplits(accountIds);
       return;
     }
 
