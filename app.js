@@ -2798,8 +2798,8 @@ function watchTimerCard(card, statusEl, startBtn) {
       statusEl.textContent = `▶ Сплит обнаружен (${running.length}), запускаю отсчёт...`;
       startWorkCountdown(accountIds);
     } else {
-      statusEl.textContent = `Слежу... (${accountIds.length} анкет, жду сплита)`;
-      _timerIntervals[card.id] = setTimeout(waitForSplit, 1000);
+      statusEl.textContent = `▶ Сплит не запущен — запускаю сам...`;
+      restartSplits(accountIds);
     }
   }
 
