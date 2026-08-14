@@ -293,7 +293,12 @@ def api_update_account(account_id: str, payload: AccountUpdateRequest, authoriza
     return {"ok": True}
 
 @app.delete("/api/accounts/{account_id}")
-def delete_account(account_id: str):
+def delete_account(account_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    account_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).execute()
+    if not account_res.data:
+        raise HTTPException(status_code=403, detail="Нет доступа")
     supabase.table("accounts").delete().eq("id", account_id).execute()
     return {"ok": True}
 
@@ -725,11 +730,21 @@ async def vzn_verify_code(payload: dict, authorization: str | None = Header(defa
 # ── AI Settings ───────────────────────────────────────────
 
 @app.get("/api/ai-settings/{account_id}")
-def api_get_ai_settings(account_id: str):
+def api_get_ai_settings(account_id: str, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    account_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).execute()
+    if not account_res.data:
+        raise HTTPException(status_code=403, detail="Нет доступа")
     return {"ok": True, "settings": get_ai_settings(account_id)}
 
 @app.post("/api/ai-settings/{account_id}")
-def api_save_ai_settings(account_id: str, payload: AiSettingsPayload):
+def api_save_ai_settings(account_id: str, payload: AiSettingsPayload, authorization: str | None = Header(default=None)):
+    session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+    account_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).execute()
+    if not account_res.data:
+        raise HTTPException(status_code=403, detail="Нет доступа")
     existing = get_ai_settings(account_id)
     data = {k: v for k, v in payload.model_dump().items() if v != "" and v is not None}
     merged = {**existing, **data}
@@ -1478,6 +1493,8 @@ def api_delete_key_slot(slot_id: str, authorization: str | None = Header(default
 @app.post("/api/key-slots/{slot_id}/assign")
 def api_assign_key_slot(slot_id: str, account_id: str = "", authorization: str | None = Header(default=None)):
     session = require_auth(authorization)
+    owner_emails = get_team_owner_emails(session["email"])
+
     slot_res = supabase.table("key_slots").select("*").eq("id", slot_id).eq("owner_email", session["email"]).execute()
     if not slot_res.data:
         raise HTTPException(status_code=404, detail="Слот не найден")
@@ -1487,6 +1504,12 @@ def api_assign_key_slot(slot_id: str, account_id: str = "", authorization: str |
         raise HTTPException(status_code=400, detail="Слот пустой")
     if not account_id:
         raise HTTPException(status_code=400, detail="account_id не передан")
+
+    # Проверяем, что анкета принадлежит именно этому пользователю (или его команде)
+    account_res = supabase.table("accounts").select("id").eq("id", account_id).in_("owner_email", owner_emails).execute()
+    if not account_res.data:
+        raise HTTPException(status_code=403, detail="Нет доступа к этой анкете")
+
     # Применяем все ключи к ai_settings анкеты
     existing = supabase.table("ai_settings").select("account_id").eq("account_id", account_id).execute()
     if existing.data:
