@@ -12,6 +12,7 @@ import asyncio
 import os
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 import time
 import unicodedata
 import http.client
@@ -915,6 +916,7 @@ def push_split_log_sync(account_id: str, message: str):
 # ══════════════════════════════════════════════════════════
 
 JOB_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_JOBS)
+TASK_EXECUTOR = ThreadPoolExecutor(max_workers=30)
 
 
 def get_twinby_account_ids() -> list[str]:
@@ -1029,7 +1031,7 @@ async def process_job(job: dict):
 
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
-                        None,
+                        TASK_EXECUTOR,
                         lambda: twinby_task_likes_http(token, limit=limit, settings=settings)
                     ),
                     timeout=300.0
@@ -1050,7 +1052,7 @@ async def process_job(job: dict):
                 settings["_account_id"] = account_id
 
                 result = await asyncio.get_event_loop().run_in_executor(
-                    None,
+                    TASK_EXECUTOR,
                     lambda: twinby_task_auto_reply_http(
                         token=token,
                         settings=settings,
