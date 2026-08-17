@@ -3899,6 +3899,7 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
       pushLog(accountId, `Круг ${round}: ставлю ${limit} лайков...`);
 
       const likesResult = await runOneLikesStep(accountId, limit, resultEl, round);
+      lastHeartbeat = Date.now();
 
       if (likesResult.blocked || likesResult.logged_out) {
         await switchSplitToReserve(accountId, likesResult, limit, resultEl, cardEl, fastPollId, livePollId);
@@ -3917,6 +3918,7 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
       pushLog(accountId, `Круг ${round}: чаты (1/2)...`);
 
       const chatsResult1 = await runOneChatsStep(accountId, resultEl, round, "1/2");
+      lastHeartbeat = Date.now();
 
       if (chatsResult1.blocked || chatsResult1.logged_out) {
         await switchSplitToReserve(accountId, chatsResult1, limit, resultEl, cardEl, fastPollId, livePollId);
@@ -3935,6 +3937,7 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
       pushLog(accountId, `Круг ${round}: чаты (2/2)...`);
 
       const chatsResult2 = await runOneChatsStep(accountId, resultEl, round, "2/2");
+      lastHeartbeat = Date.now();
 
       if (chatsResult2.blocked || chatsResult2.logged_out) {
         await switchSplitToReserve(accountId, chatsResult2, limit, resultEl, cardEl, fastPollId, livePollId);
