@@ -477,13 +477,13 @@ def task_auto_reply_http(
 
             try:
                 _greetings = [
-                    "Приветик, я в поисках встреч, если интересно давай сразу в тг обсудим)) ",
-                    "Приветик, пиши тг свой ) или вот мой ",
-                    "Салют, встречаюсь за подарочки, давай сразу в тг",
-                    "Приветик, пиши погнали в тг ? ",
-                    "Вау, это что за тигр тут, встретиться не хочешь ? давай в телегу сразу ?",
-                    "привет, интересуют встречи на мп? если да давай в телегу сразу",
-                    "Привет, если интересны встречи на один раз, давай в телеге сразу спишемся ? ",
+                    "привет)",
+                    "приветик)",
+                    "салют)",
+                    "хай, привет)",
+                    "привет, как дела?",
+                    "приветик, рада знакомству)",
+                    "хай)",
                 ]
                 _acc_id = settings.get("_account_id", "default")
                 _idx_path = Path(__file__).resolve().parent / "data" / f"greeting_index_twinby_{_acc_id}.json"
@@ -493,9 +493,6 @@ def task_auto_reply_http(
                     _idx = 0
                 first_reply = _greetings[_idx % len(_greetings)]
                 _idx_path.write_text(json.dumps({"idx": (_idx + 1) % len(_greetings)}, ensure_ascii=False), encoding="utf-8")
-                exact_contact = (settings.get("contacts") or "").strip()
-                if exact_contact:
-                    first_reply = first_reply.rstrip() + " " + exact_contact
                 print(f"[TWINBY MATCH] Приветствие #{_idx}: {first_reply}", flush=True)
 
                 recheck_resp = get_chat_messages(token, chat_id)
