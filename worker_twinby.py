@@ -85,8 +85,18 @@ CANCEL_FLAGS: dict[str, bool] = {}
 ACTIVE_JOB_IDS: dict[str, str] = {}
 
 
-def should_cancel(account_id: str) -> bool:
-    return CANCEL_FLAGS.get(account_id, False)
+def should_cancel(account_id: str, job_id: str | None = None) -> bool:
+    if CANCEL_FLAGS.get(account_id, False):
+        return True
+    if job_id:
+        try:
+            res = supabase.table("job_queue").select("status").eq("id", job_id).execute()
+            if res.data and res.data[0].get("status") == "cancelled":
+                CANCEL_FLAGS[account_id] = True
+                return True
+        except Exception as e:
+            print(f"[WORKER-TWINBY] should_cancel DB-проверка ошибка: {e}", flush=True)
+    return False
 
 
 # ══════════════════════════════════════════════════════════
@@ -1047,7 +1057,7 @@ async def process_job(job: dict):
                         build_prompt_fn=build_system_prompt,
                         call_groq_fn=call_groq_with_rotation,
                         max_chats=payload.get("max_dialogs", 20),
-                        should_cancel_fn=lambda: should_cancel(account_id),
+                        should_cancel_fn=lambda: should_cancel(account_id, job_id),
                     )
                 )
 
