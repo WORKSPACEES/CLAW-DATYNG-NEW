@@ -3891,22 +3891,32 @@ async function runSplitLoop(accountId, limit, resultEl, cardEl, fastPollId, live
     // ── Внутренний цикл: 5 кругов для Mamba, бесконечно для Lovelaz ──
     while (runningSplits.has(accountId) && round <= MAX_ROUNDS) {
 
-      // ── Шаг 1: лайки ──
-      if (resultEl) {
-        resultEl.textContent = `Круг ${round}: ставлю ${limit} лайков...`;
-        resultEl.className = "sqResult";
+      const doLikes = (round % 3 === 1); // лайки на 1-м круге из каждых трёх: 1, 4, 7, 10...
+
+      if (doLikes) {
+        // ── Шаг 1: лайки ──
+        if (resultEl) {
+          resultEl.textContent = `Круг ${round}: ставлю ${limit} лайков...`;
+          resultEl.className = "sqResult";
+        }
+        pushLog(accountId, `Круг ${round}: ставлю ${limit} лайков...`);
+
+        const likesResult = await runOneLikesStep(accountId, limit, resultEl, round);
+        lastHeartbeat = Date.now();
+
+        if (likesResult.blocked || likesResult.logged_out) {
+          await switchSplitToReserve(accountId, likesResult, limit, resultEl, cardEl, fastPollId, livePollId);
+          return;
+        }
+
+        if (!runningSplits.has(accountId)) break;
+      } else {
+        pushLog(accountId, `Круг ${round}: лайки пропускаю, только проверяю чаты...`);
+        if (resultEl) {
+          resultEl.textContent = `Круг ${round}: лайки пропущены, проверяю чаты...`;
+          resultEl.className = "sqResult";
+        }
       }
-      pushLog(accountId, `Круг ${round}: ставлю ${limit} лайков...`);
-
-      const likesResult = await runOneLikesStep(accountId, limit, resultEl, round);
-      lastHeartbeat = Date.now();
-
-      if (likesResult.blocked || likesResult.logged_out) {
-        await switchSplitToReserve(accountId, likesResult, limit, resultEl, cardEl, fastPollId, livePollId);
-        return;
-      }
-
-      if (!runningSplits.has(accountId)) break;
 
       // ── Шаг 2: первый проход по чатам ──
       await setAccountRunStatus(accountId, "running", "split", `Круг ${round}: чаты (1/2)`);
