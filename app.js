@@ -4560,19 +4560,6 @@ function renderKeySlots() {
     list.appendChild(el);
   });
 }
-    el.querySelector(".slotEditBtn").onclick = () => openKeySlotModal(slot);
-    el.querySelector(".slotDeleteBtn").onclick = async () => {
-      await fetch(WORKER_API + "/api/key-slots/" + slot.id, { method: "DELETE" });
-      loadKeySlots();
-    };
-    el.querySelector(".slotReleaseBtn")?.addEventListener("click", async () => {
-      await fetch(WORKER_API + "/api/key-slots/release/" + encodeURIComponent(slot.account_id), { method: "POST" });
-      slot.account_id = null;
-      loadKeySlots();
-    });
-    list.appendChild(el);
-  });
-}
 
 async function openKeySlotModal(slot = null) {
   const form = document.getElementById("keySlotForm");
