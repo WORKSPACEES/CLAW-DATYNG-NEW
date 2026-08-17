@@ -75,7 +75,7 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)"}
     proxy_url = None
     if _px.get("use_proxy") and _px.get("host"):
-        proxy_url = f"socks5h://{_px['username']}:{_px['password']}@{_px['host']}:{_px['port']}"
+        proxy_url = f"http://{_px['username']}:{_px['password']}@{_px['host']}:{_px['port']}"
     try:
         import httpx
         async with httpx.AsyncClient(proxy=proxy_url, timeout=45) as client:
@@ -105,7 +105,7 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
     px = _gp2("twinby")
     proxy_url = None
     if px.get("use_proxy") and px.get("host"):
-        proxy_url = f"socks5h://{px['username']}:{px['password']}@{px['host']}:{px['port']}"
+        proxy_url = f"http://{px['username']}:{px['password']}@{px['host']}:{px['port']}"
     
     body = _json.dumps({
         "login": email,
