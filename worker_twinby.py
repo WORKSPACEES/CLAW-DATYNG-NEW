@@ -976,8 +976,6 @@ async def process_job(job: dict):
 
         print(f"\n[WORKER-TWINBY] Задача {job_id} ({job_type}) для анкеты {account_id}", flush=True)
 
-        hb_task = asyncio.create_task(heartbeat_job(job_id))
-
         try:
             # ── Получаем токен ──
             raw_res = supabase.table("accounts_private").select("cookies_raw").eq("id", account_id).execute()
@@ -1049,7 +1047,6 @@ async def process_job(job: dict):
             print(f"[WORKER-TWINBY] Задача {job_id} упала: {e}", flush=True)
 
         finally:
-            hb_task.cancel()
             ACTIVE_JOB_IDS.pop(account_id, None)
             CANCEL_FLAGS.pop(account_id, None)
 
