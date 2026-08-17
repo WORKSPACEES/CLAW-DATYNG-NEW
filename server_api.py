@@ -417,9 +417,9 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         if _proxy and _proxy.get("use_proxy") and _proxy.get("host"):
             conn = _hc.HTTPSConnection(_proxy["host"], _proxy.get("port", 8080), timeout=15)
             _proxy_auth = {}
-            if _proxy.get("user"):
+            if _proxy.get("username"):
                 import base64
-                _creds = base64.b64encode(f"{_proxy.get('user','')}:{_proxy.get('pass','')}".encode()).decode()
+                _creds = base64.b64encode(f"{_proxy.get('username','')}:{_proxy.get('password','')}".encode()).decode()
                 _proxy_auth = {"Proxy-Authorization": f"Basic {_creds}"}
             conn.set_tunnel("twinby.ru", 443, _proxy_auth)
         else:
