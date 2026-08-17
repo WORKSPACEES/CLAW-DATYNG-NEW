@@ -3221,7 +3221,7 @@ form.addEventListener("submit", async (event) => {
   if (!failed) {
     connectSlots.innerHTML = "";
     addConnectSlot();
-    loadKeySlots().then(() => autoAssignAllFreeSlots());
+    loadKeySlots();
   }
 
   connectBtn.disabled    = false;
@@ -4531,14 +4531,49 @@ function renderKeySlots() {
   keySlots.forEach(slot => {
     const keyCount = (slot.keys || "").split("\n").filter(k => k.trim()).length;
     const isAssigned = !!slot.account_id;
+    const boundAccount = isAssigned ? cachedAccounts.find(a => a.id === slot.account_id) : null;
+    const boundName = boundAccount ? (boundAccount.name || boundAccount.id) : (isAssigned ? "неизвестная анкета" : "");
+
     const el = document.createElement("div");
     el.style.cssText = "border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:12px;margin-bottom:10px;background:rgba(255,255,255,0.02);";
-    el.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;"><span style="font:600 12px Space Grotesk,sans-serif;color:var(--text);">' + slot.name + '</span><div style="display:flex;gap:6px;align-items:center;"><span style="font:400 11px Space Grotesk,sans-serif;color:' + (isAssigned ? "#10f5a8" : "var(--text2)") + ';">' + (isAssigned ? "✓ привязан" : "свободен") + '</span><button class="slotEditBtn" data-id="' + slot.id + '" style="background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:13px;">✎</button><button class="slotDeleteBtn" data-id="' + slot.id + '" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:13px;">✕</button></div></div>';
+    el.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+        '<span style="font:600 12px Space Grotesk,sans-serif;color:var(--text);">' + slot.name + '</span>' +
+        '<div style="display:flex;gap:6px;align-items:center;">' +
+          '<span style="font:400 11px Space Grotesk,sans-serif;color:' + (isAssigned ? "#10f5a8" : "var(--text2)") + ';">' + (isAssigned ? "✓ привязан" : "свободен") + '</span>' +
+          (isAssigned ? '<button class="slotReleaseBtn" data-id="' + slot.id + '" data-account="' + slot.account_id + '" style="background:none;border:none;color:#fbbf24;cursor:pointer;font-size:13px;" title="Отвязать">⛓✕</button>' : '') +
+          '<button class="slotEditBtn" data-id="' + slot.id + '" style="background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:13px;">✎</button>' +
+          '<button class="slotDeleteBtn" data-id="' + slot.id + '" style="background:none;border:none;color:#fb7185;cursor:pointer;font-size:13px;">✕</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="font:400 11px Space Grotesk,sans-serif;color:var(--text2);display:flex;justify-content:space-between;">' +
+        '<span>Ключей: <b style="color:var(--text);">' + keyCount + '</b></span>' +
+        (isAssigned ? '<span title="' + slot.account_id + '">Анкета: <b style="color:var(--text);">' + boundName + '</b></span>' : '') +
+      '</div>';
+
     el.querySelector(".slotEditBtn").onclick = () => openKeySlotModal(slot);
     el.querySelector(".slotDeleteBtn").onclick = async () => {
       await fetch(WORKER_API + "/api/key-slots/" + slot.id, { method: "DELETE" });
       loadKeySlots();
     };
+    el.querySelector(".slotReleaseBtn")?.addEventListener("click", async () => {
+      await fetch(WORKER_API + "/api/key-slots/release/" + encodeURIComponent(slot.account_id), { method: "POST" });
+      slot.account_id = null;
+      loadKeySlots();
+    });
+    list.appendChild(el);
+  });
+}
+    el.querySelector(".slotEditBtn").onclick = () => openKeySlotModal(slot);
+    el.querySelector(".slotDeleteBtn").onclick = async () => {
+      await fetch(WORKER_API + "/api/key-slots/" + slot.id, { method: "DELETE" });
+      loadKeySlots();
+    };
+    el.querySelector(".slotReleaseBtn")?.addEventListener("click", async () => {
+      await fetch(WORKER_API + "/api/key-slots/release/" + encodeURIComponent(slot.account_id), { method: "POST" });
+      slot.account_id = null;
+      loadKeySlots();
+    });
     list.appendChild(el);
   });
 }
@@ -4608,6 +4643,7 @@ function startApp() {
   document.getElementById("addKeySlotBtn").onclick = () => openKeySlotModal();
   document.getElementById("keySlotModalClose").onclick = () => {
     document.getElementById("keySlotForm").classList.remove("open");
+    loadKeySlots();
   };
   document.getElementById("keySlotSaveBtn").onclick = async () => {
     const saveBtn = document.getElementById("keySlotSaveBtn");
