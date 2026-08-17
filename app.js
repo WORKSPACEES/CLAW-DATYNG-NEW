@@ -3352,6 +3352,19 @@ function renderAnalyticsGrid(accounts) {
 }
 
 async function openAnalyticsModal(accountId, accounts, cardId) {
+  const saveBtn = document.getElementById("aModalSaveBtn");
+  saveBtn.dataset.editCardId = cardId || "";
+
+  // Если accountId не передан — берём первый аккаунт активной платформы
+  let resolvedAccountId = accountId;
+  if (!resolvedAccountId && cachedAccounts.length) {
+    const platformAcc = cachedAccounts.find(a =>
+      (a.platform || "").toLowerCase() === (activePlatform || "").toLowerCase()
+    );
+    if (platformAcc) resolvedAccountId = platformAcc.id;
+  }
+
+  saveBtn.dataset.editAccountId = resolvedAccountId || "";
 
   // Грузим данные из ai_settings если есть accountId
   let settings = {};
