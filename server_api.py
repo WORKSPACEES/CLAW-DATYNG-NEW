@@ -61,11 +61,10 @@ app.add_middleware(
 # ── Helper: проксирование на воркер ──────────────────────
 
 async def proxy_to_worker(platform: str, path: str, payload: dict, authorization: str = None) -> dict:
-    """Проксирует запрос на нужный воркер-сервер."""
     base_url = PLATFORM_URLS.get(platform.lower())
     if not base_url:
         raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform}")
-    
+
     headers = {"Content-Type": "application/json"}
     if authorization:
         headers["Authorization"] = authorization
@@ -73,11 +72,31 @@ async def proxy_to_worker(platform: str, path: str, payload: dict, authorization
     try:
         async with httpx.AsyncClient(timeout=300) as client:
             resp = await client.post(f"{base_url}{path}", json=payload, headers=headers)
-            return resp.json()
     except httpx.ConnectError:
         raise HTTPException(status_code=503, detail=f"Воркер {platform} недоступен")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail=f"Воркер {platform} не ответил вовремя")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    if not resp.content:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Воркер {platform} вернул пустой ответ (возможно, ещё не проснулся после сна)"
+        )
+
+    try:
+        data = resp.json()
+    except ValueError:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Воркер {platform} вернул не-JSON ответ (status={resp.status_code}): {resp.text[:200]}"
+        )
+
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=resp.status_code, detail=data.get("detail") or data)
+
+    return data
 
 # ── Pydantic Models ───────────────────────────────────────
 
