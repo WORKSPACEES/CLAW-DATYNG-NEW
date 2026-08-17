@@ -20,6 +20,7 @@ class AutoReplyTaskRequest(BaseModel):
 
 class StopTaskRequest(BaseModel):
     account_id: str
+    job_type: str | None = None
 
 def enqueue_job(account_id: str, job_type: str, payload: dict) -> dict:
     existing = supabase.table("job_queue").select("id").eq("account_id", account_id).eq("type", job_type).in_("status", ["pending", "running"]).limit(1).execute()
@@ -59,7 +60,10 @@ def api_twinby_auto_reply(payload: AutoReplyTaskRequest):
 @app.post("/api/tasks/stop")
 def api_stop(payload: StopTaskRequest):
     CANCEL_FLAGS[payload.account_id] = True
-    supabase.table("job_queue").update({"status": "cancelled"}).eq("account_id", payload.account_id).in_("status", ["pending", "running"]).execute()
+    q = supabase.table("job_queue").update({"status": "cancelled"}).eq("account_id", payload.account_id).in_("status", ["pending", "running"])
+    if payload.job_type:
+        q = q.in_("type", [payload.job_type, f"{payload.job_type}-http"])
+    q.execute()
     return {"ok": True}
 
 @app.post("/api/twinby/send-code")
