@@ -1406,7 +1406,10 @@ if (isIntCityCard && intCityFields) {
           }).catch(() => {});
         }
 
-        await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
+        await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, {
+          method: "DELETE",
+          headers: { "Authorization": localStorage.getItem("claw_auth_token") || "" },
+        });
       } catch (err) {
         alert("Не удалось удалить: " + err.message);
       }
@@ -1442,7 +1445,10 @@ function createAccountCard(account) {
     const card = e.target.closest(".accountCard, .card, li") || e.target.parentElement;
     if (card) card.remove();
     try {
-      const res  = await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, { method: "DELETE" });
+      const res  = await fetch(WORKER_API + `/api/accounts/${encodeURIComponent(account.id)}`, {
+        method: "DELETE",
+        headers: { "Authorization": localStorage.getItem("claw_auth_token") || "" },
+      });
       const data = await res.json();
       if (!data.ok) throw new Error(data.error || "Ошибка удаления");
     } catch (err) { alert("Не удалось удалить: " + err.message); }
@@ -3345,18 +3351,10 @@ function renderAnalyticsGrid(accounts) {
   });
 }
 
-async function openAnalyticsModal(accountId, accounts) {
+async function openAnalyticsModal(accountId, accounts, cardId) {
   const saveBtn = document.getElementById("aModalSaveBtn");
-
-  // Если accountId не передан — берём первый аккаунт активной платформы
-  let resolvedAccountId = accountId;
-  if (!resolvedAccountId && cachedAccounts.length) {
-    const platformAcc = cachedAccounts.find(a =>
-      (a.platform || "").toLowerCase() === (activePlatform || "").toLowerCase()
-    );
-    if (platformAcc) resolvedAccountId = platformAcc.id;
-  }
-
+  saveBtn.dataset.editCardId = cardId || "";
+  ...
   saveBtn.dataset.editAccountId = resolvedAccountId || "";
 
   // Грузим данные из ai_settings если есть accountId
@@ -3389,6 +3387,9 @@ addAnalyticsBtn?.addEventListener("click", async () => {
 document.getElementById("analyticsModalClose")?.addEventListener("click", (e) => {
   e.stopPropagation();
   document.getElementById("analyticsModal").classList.remove("open");
+  const saveBtn = document.getElementById("aModalSaveBtn");
+  delete saveBtn.dataset.editCardId;
+  delete saveBtn.dataset.editAccountId;
 });
 
 // закрытие только через крестик или кнопку сохранить
