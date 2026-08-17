@@ -1488,10 +1488,21 @@ def api_create_key_slot(payload: KeySlotPayload, authorization: str | None = Hea
 @app.patch("/api/key-slots/{slot_id}")
 def api_update_key_slot(slot_id: str, payload: KeySlotPayload, authorization: str | None = Header(default=None)):
     session = require_auth(authorization)
-    supabase.table("key_slots").update({
+    res = supabase.table("key_slots").update({
         "name": payload.name,
         "keys": payload.keys,
     }).eq("id", slot_id).eq("owner_email", session["email"]).execute()
+
+    # Если слот уже привязан к анкете — прокидываем обновлённые ключи в ai_settings
+    if res.data:
+        slot = res.data[0]
+        account_id = slot.get("account_id")
+        if account_id:
+            keys = [k.strip() for k in (payload.keys or "").splitlines() if k.strip()]
+            supabase.table("ai_settings").update({
+                "groq_api_keys": "\n".join(keys)
+            }).eq("account_id", account_id).execute()
+
     return {"ok": True}
 
 @app.post("/api/key-slots/release/{account_id}")
