@@ -4,8 +4,8 @@ import httpx
 from supabase import create_client
 from supabase.client import ClientOptions
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "https://tbgaahpybvmfmzddrrdv.supabase.co")
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiZ2FhaHB5YnZtZm16ZGRycmR2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2MDkzMDksImV4cCI6MjA5NzE4NTMwOX0.mnF7po7rusq3XrDIdfTuzuK8vXVkpMkJRWWT7QVVf2c"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://uaknvfiuommbicpvwcql.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVha252Zml1b21tYmljcHZ3Y3FsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NTI5Mzk1MCwiZXhwIjoyMTAwODY5OTUwfQ.o_kjU1Z3Q__qoWg2jQ4U0eG3HDWX0dsmXvg-r7O4oE4")
 
 _client = create_client(SUPABASE_URL, SUPABASE_KEY, options=ClientOptions(
     httpx_client=httpx.Client(http2=False, timeout=3.0)
