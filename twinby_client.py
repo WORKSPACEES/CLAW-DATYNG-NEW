@@ -591,6 +591,19 @@ def task_auto_reply_http(
         if should_cancel_fn and should_cancel_fn():
             break
 
+        # ── Жёсткая защита от повторной отправки контакта ──
+        contact_already_sent = bool(contacts) and any(
+            contacts.lower() in (m.get("content") or "").lower()
+            for m in history if m.get("role") == "assistant"
+        )
+        if contact_already_sent and contacts and contacts.lower() in reply.lower():
+            import re as _re
+            reply = _re.sub(_re.escape(contacts), "", reply, flags=_re.IGNORECASE).strip().strip("—-,. ")
+            if not reply:
+                print(f"[TWINBY AUTO-REPLY] {name}: контакт уже был в истории, ответ пуст после вырезки — пропуск", flush=True)
+                skipped += 1
+                continue
+
         fresh_resp = get_chat_messages(token, chat_id)
         fresh_msgs = fresh_resp.get("results") or fresh_resp.get("data") or []
         if fresh_msgs:
@@ -604,7 +617,8 @@ def task_auto_reply_http(
 
         try:
             if contacts and contacts.lower() in reply.lower():
-                reply_without_contact = reply.replace(contacts, "").strip()
+                import re as _re
+                reply_without_contact = _re.sub(_re.escape(contacts), "", reply, flags=_re.IGNORECASE).strip()
                 reply_without_contact = reply_without_contact.strip("—-,. ")
                 if reply_without_contact:
                     send_message(token, chat_id, reply_without_contact)
