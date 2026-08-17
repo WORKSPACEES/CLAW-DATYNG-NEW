@@ -3352,10 +3352,6 @@ function renderAnalyticsGrid(accounts) {
 }
 
 async function openAnalyticsModal(accountId, accounts, cardId) {
-  const saveBtn = document.getElementById("aModalSaveBtn");
-  saveBtn.dataset.editCardId = cardId || "";
-  ...
-  saveBtn.dataset.editAccountId = resolvedAccountId || "";
 
   // Грузим данные из ai_settings если есть accountId
   let settings = {};
