@@ -18,7 +18,7 @@ def socks5_connect(proxy_host, proxy_port, target_host, target_port, username=No
         sock.sendall(b"\x05\x01\x00")
     resp = sock.recv(2)
     if len(resp) < 2 or resp[0] != 0x05:
-        raise RuntimeError(f"SOCKS5 handshake failed: {resp!r}")
+        raise RuntimeError("SOCKS5 handshake failed: " + repr(resp))
     method = resp[1]
     if method == 0x02:
         u = username.encode()
@@ -26,15 +26,17 @@ def socks5_connect(proxy_host, proxy_port, target_host, target_port, username=No
         sock.sendall(bytes([0x01, len(u)]) + u + bytes([len(p)]) + p)
         auth_resp = sock.recv(2)
         if len(auth_resp) < 2 or auth_resp[1] != 0x00:
-            raise RuntimeError(f"SOCKS5 auth failed: {auth_resp!r}")
+            raise RuntimeError("SOCKS5 auth failed: " + repr(auth_resp))
     elif method == 0xFF:
-        raise RuntimeError("SOCKS5: сервер не принял ни один метод авторизации")
+        raise RuntimeError("SOCKS5: server rejected all auth methods")
     host_bytes = target_host.encode()
     req = b"\x05\x01\x00\x03" + bytes([len(host_bytes)]) + host_bytes + int(target_port).to_bytes(2, "big")
     sock.sendall(req)
     resp = sock.recv(10)
     if len(resp) < 2 or resp[1] != 0x00:
-        raise RuntimeError(f"SOCKS5
+        code = resp[1] if len(resp) > 1 else "?"
+        raise RuntimeError("SOCKS5 CONNECT failed, code=" + str(code))
+    return sock
 
 app = FastAPI(title="CLAW-AI Twinby Manager")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
