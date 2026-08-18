@@ -108,6 +108,112 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
         print(f"[TWINBY SEND-CODE ERROR] {type(e).__name__}: {e!r}", flush=True)
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
+@app.get("/api/debug/twinby-proxy-test")
+def debug_twinby_proxy_test():
+    import time, socket, ssl, base64, json as _json
+    from proxy_loader import get_proxy as _gp
+
+    _px = _gp("twinby")
+    log = []
+    t0 = time.time()
+
+    def step(msg):
+        line = f"{msg} ({round(time.time()-t0,2)}s)"
+        log.append(line)
+        print(f"[TWINBY DEBUG] {line}", flush=True)
+
+    step(f"proxy_config: host={_px.get('host')} port={_px.get('port')} use_proxy={_px.get('use_proxy')}")
+
+    if not (_px.get("use_proxy") and _px.get("host")):
+        step("прокси не настроен — тест прекращён")
+        return {"log": log}
+
+    host = _px["host"]
+    port = int(_px.get("port") or 8080)
+    user = _px.get("username", "")
+    pw = _px.get("password", "")
+    sock = None
+    ssock = None
+
+    try:
+        step("stage1: TCP-connect к прокси...")
+        sock = socket.create_connection((host, port), timeout=10)
+        step("stage1 OK")
+    except Exception as e:
+        step(f"stage1 FAILED: {type(e).__name__}: {e}")
+        return {"log": log}
+
+    try:
+        step("stage2: CONNECT twinby.ru:443 через прокси...")
+        auth = base64.b64encode(f"{user}:{pw}".encode()).decode()
+        connect_req = (
+            f"CONNECT twinby.ru:443 HTTP/1.1\r\n"
+            f"Host: twinby.ru:443\r\n"
+            f"Proxy-Authorization: Basic {auth}\r\n"
+            f"Proxy-Connection: Keep-Alive\r\n\r\n"
+        ).encode()
+        sock.sendall(connect_req)
+        sock.settimeout(10)
+        resp = sock.recv(4096)
+        step(f"stage2 response: {resp[:200]!r}")
+        if b"200" not in resp.split(b"\r\n", 1)[0]:
+            step("stage2 FAILED: прокси не установил туннель")
+            return {"log": log}
+    except Exception as e:
+        step(f"stage2 FAILED: {type(e).__name__}: {e}")
+        return {"log": log}
+
+    try:
+        step("stage3: TLS handshake к twinby.ru...")
+        ctx = ssl.create_default_context()
+        sock.settimeout(10)
+        ssock = ctx.wrap_socket(sock, server_hostname="twinby.ru")
+        step("stage3 OK")
+    except Exception as e:
+        step(f"stage3 FAILED: {type(e).__name__}: {e}")
+        return {"log": log}
+
+    try:
+        step("stage4: отправка HTTPS-запроса...")
+        body = _json.dumps({"login": "swope-85@mail.ru", "provider": "email", "codeSender": "email"}).encode()
+        req = (
+            f"POST /api/auth/v2/auth/init HTTP/1.1\r\n"
+            f"Host: twinby.ru\r\n"
+            f"Content-Type: application/json\r\n"
+            f"Accept: application/json\r\n"
+            f"User-Agent: Dart/3.11 (dart:io)\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            f"Connection: close\r\n\r\n"
+        ).encode() + body
+        ssock.sendall(req)
+        step("stage4 отправлено")
+    except Exception as e:
+        step(f"stage4 FAILED: {type(e).__name__}: {e}")
+        return {"log": log}
+
+    try:
+        step("stage5: ожидание ответа...")
+        ssock.settimeout(15)
+        data = b""
+        while True:
+            chunk = ssock.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+            if len(data) > 2000:
+                break
+        step(f"stage5 OK, получено {len(data)} байт: {data[:300]!r}")
+    except Exception as e:
+        step(f"stage5 FAILED: {type(e).__name__}: {e}")
+        return {"log": log}
+    finally:
+        try:
+            (ssock or sock).close()
+        except Exception:
+            pass
+
+    return {"log": log}
+
 @app.post("/api/connect")
 async def connect_twinby(payload: dict, authorization: str | None = Header(default=None)):
     require_auth(authorization)
