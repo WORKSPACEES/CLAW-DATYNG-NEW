@@ -30,11 +30,11 @@ def _proxy():
             "user_agent": _account_proxy.get("user_agent", ""),
         }
     return {
-        "use_proxy": True,
-        "host": "141.133.127.7",
-        "port": 62654,
-        "username": "fCSUpubz",
-        "password": "BbhUDK7d",
+        "use_proxy": False,
+        "host": "",
+        "port": 0,
+        "username": "",
+        "password": "",
         "user_agent": "",
     }
 
