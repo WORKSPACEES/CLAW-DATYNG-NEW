@@ -75,6 +75,7 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     from proxy_loader import get_proxy as _gp
     import json as _json
     _px = _gp("twinby")
+    print(f"[TWINBY SEND-CODE] proxy config: {_px}", flush=True)
     body = _json.dumps({"login": email, "provider": "email", "codeSender": "email"}, ensure_ascii=False)
     headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)"}
     proxy_url = None
