@@ -217,47 +217,54 @@ def debug_twinby_proxy_test():
 @app.post("/api/connect")
 async def connect_twinby(payload: dict, authorization: str | None = Header(default=None)):
     require_auth(authorization)
-    
+
     email = (payload.get("twinby_email") or "").strip()
     code = (payload.get("twinby_code") or "").strip()
     account_name = (payload.get("account_name") or email).strip()
-    
+
     if not email or not code:
         raise HTTPException(status_code=400, detail="Введи email и код из письма")
-    
-    import httpx, json as _json
-    
+
+    import json as _json, http.client as _hc, base64, asyncio
     from proxy_loader import get_proxy as _gp2
     px = _gp2("twinby")
-    proxy_url = None
-    if px.get("use_proxy") and px.get("host"):
-        proxy_url = f"http://{px['username']}:{px['password']}@{px['host']}:{px['port']}"
-    
-    body = _json.dumps({
-        "login": email,
-        "provider": "email", 
-        "code": code,
-    }, ensure_ascii=False).encode()
-    
-    async with httpx.AsyncClient(proxy=proxy_url, timeout=45) as client:
-        resp = await client.post(
-            "https://twinby.ru/api/auth/v2/auth/confirm",
-            content=body,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "Dart/3.11 (dart:io)",
-            }
-        )
-    
-    if resp.status_code != 200:
-        raise HTTPException(status_code=400, detail=f"Неверный код или email (статус {resp.status_code})")
-    
-    data = resp.json()
+
+    body = _json.dumps({"login": email, "provider": "email", "code": code}, ensure_ascii=False).encode()
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Dart/3.11 (dart:io)",
+        "Content-Length": str(len(body)),
+    }
+
+    def _do_confirm():
+        if px.get("use_proxy") and px.get("host"):
+            auth = base64.b64encode(f"{px['username']}:{px['password']}".encode()).decode()
+            conn = _hc.HTTPSConnection(px["host"], int(px.get("port") or 8080), timeout=30)
+            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
+        else:
+            conn = _hc.HTTPSConnection("twinby.ru", timeout=30)
+        conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers=headers)
+        resp = conn.getresponse()
+        status = resp.status
+        raw = resp.read()
+        conn.close()
+        return status, raw
+
+    try:
+        status, raw = await asyncio.to_thread(_do_confirm)
+    except Exception as e:
+        print(f"[TWINBY CONNECT ERROR] {type(e).__name__}: {e!r}", flush=True)
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+    if status != 200:
+        raise HTTPException(status_code=400, detail=f"Неверный код или email (статус {status})")
+
+    data = _json.loads(raw.decode("utf-8", errors="ignore"))
     token = data.get("accessToken") or data.get("token") or data.get("access") or data.get("jwt") or ""
     if not token:
         raise HTTPException(status_code=400, detail=f"Twinby не вернул токен. Ответ: {str(data)[:200]}")
-    
+
     # Получаем фото профиля
     photo_url = ""
     try:
@@ -272,10 +279,10 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
         print(f"[TWINBY CONNECT] фото: {photo_url}", flush=True)
     except Exception as e:
         print(f"[TWINBY CONNECT] фото не получено: {e}", flush=True)
-    
+
     import uuid as _uuid
     account_id = str(_uuid.uuid4())
-    
+
     public_account = {
         "id": account_id,
         "owner_email": require_auth(authorization)["email"],
@@ -292,13 +299,13 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
         "images_found": 0,
         "checked_at": datetime.now().isoformat(timespec="seconds"),
     }
-    
+
     supabase.table("accounts").insert(public_account).execute()
     supabase.table("accounts_private").insert({
         "id": account_id,
         "cookies_raw": token
     }).execute()
-    
+
     return {
         "ok": True,
         "account": public_account,
