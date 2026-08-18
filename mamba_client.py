@@ -151,38 +151,44 @@ def _request(method: str, path: str, cookies: dict,
     print("URL:", url)
     print("METHOD:", method)
 
-    try:
-        resp = curl_requests.request(
-            method=method,
-            url=url,
-            headers=headers,
-            data=body.encode("utf-8") if body else None,
-            proxies=proxies,
-            impersonate="chrome110",  # имитирует TLS fingerprint Chrome 110
-            timeout=30,
-            verify=False,
-        )
-
-        print("STATUS:", resp.status_code)
-
-        raw = resp.content
-        # curl_cffi сам распаковывает gzip — но на всякий случай
+    last_err = None
+    for attempt in range(3):
         try:
-            text = raw.decode("utf-8", errors="ignore")
-        except Exception:
-            text = ""
+            resp = curl_requests.request(
+                method=method,
+                url=url,
+                headers=headers,
+                data=body.encode("utf-8") if body else None,
+                proxies=proxies,
+                impersonate="chrome110",  # имитирует TLS fingerprint Chrome 110
+                timeout=30,
+                verify=False,
+            )
 
-        try:
-            data = json.loads(text)
-        except Exception:
-            data = {"_raw": text}
+            print("STATUS:", resp.status_code)
 
-        data["_status"] = resp.status_code
-        return data
+            raw = resp.content
+            # curl_cffi сам распаковывает gzip — но на всякий случай
+            try:
+                text = raw.decode("utf-8", errors="ignore")
+            except Exception:
+                text = ""
 
-    except Exception as e:
-        print(f"[REQUEST ERROR] {e}", flush=True)
-        return {"_status": 0, "_error": str(e)}
+            try:
+                data = json.loads(text)
+            except Exception:
+                data = {"_raw": text}
+
+            data["_status"] = resp.status_code
+            return data
+
+        except Exception as e:
+            last_err = e
+            print(f"[REQUEST ERROR] попытка {attempt + 1}/3: {e}", flush=True)
+            if attempt < 2:
+                time.sleep(1.5)
+
+    return {"_status": 0, "_error": str(last_err)}
 
 # ── Парсинг GraphQL ответов ───────────────────────────────────────────────────
 
