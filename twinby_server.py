@@ -231,18 +231,18 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
         "Content-Length": str(len(body)),
     }
 
-        def _do_confirm():
-            if not (px.get("host") and px.get("username")):
-                raise RuntimeError("Прокси не настроен в Supabase (proxy_settings, id=twinby) — подключение без прокси запрещено")
-            auth = base64.b64encode(f"{px['username']}:{px['password']}".encode()).decode()
-            conn = _hc.HTTPSConnection(px["host"], int(px.get("port") or 8080), timeout=30)
-            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
-            conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers=headers)
-            resp = conn.getresponse()
-            status = resp.status
-            raw = resp.read()
-            conn.close()
-            return status, raw
+    def _do_confirm():
+        if not (px.get("host") and px.get("username")):
+            raise RuntimeError("Прокси не настроен в Supabase (proxy_settings, id=twinby) — подключение без прокси запрещено")
+        auth = base64.b64encode(f"{px['username']}:{px['password']}".encode()).decode()
+        conn = _hc.HTTPSConnection(px["host"], int(px.get("port") or 8080), timeout=30)
+        conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
+        conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers=headers)
+        resp = conn.getresponse()
+        status = resp.status
+        raw = resp.read()
+        conn.close()
+        return status, raw
 
     try:
         status, raw = await asyncio.to_thread(_do_confirm)
