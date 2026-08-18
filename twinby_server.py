@@ -1,11 +1,40 @@
 # twinby_server.py — менеджер задач Twinby
-import json, gzip
+import json, gzip, socket, ssl
 from datetime import datetime
 import uuid
 from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from shared import supabase, CANCEL_FLAGS, require_auth
+import http.client
+
+
+def socks5_connect(proxy_host, proxy_port, target_host, target_port, username=None, password=None, timeout=30):
+    sock = socket.create_connection((proxy_host, proxy_port), timeout=timeout)
+    sock.settimeout(timeout)
+    if username:
+        sock.sendall(b"\x05\x02\x00\x02")
+    else:
+        sock.sendall(b"\x05\x01\x00")
+    resp = sock.recv(2)
+    if len(resp) < 2 or resp[0] != 0x05:
+        raise RuntimeError(f"SOCKS5 handshake failed: {resp!r}")
+    method = resp[1]
+    if method == 0x02:
+        u = username.encode()
+        p = (password or "").encode()
+        sock.sendall(bytes([0x01, len(u)]) + u + bytes([len(p)]) + p)
+        auth_resp = sock.recv(2)
+        if len(auth_resp) < 2 or auth_resp[1] != 0x00:
+            raise RuntimeError(f"SOCKS5 auth failed: {auth_resp!r}")
+    elif method == 0xFF:
+        raise RuntimeError("SOCKS5: сервер не принял ни один метод авторизации")
+    host_bytes = target_host.encode()
+    req = b"\x05\x01\x00\x03" + bytes([len(host_bytes)]) + host_bytes + int(target_port).to_bytes(2, "big")
+    sock.sendall(req)
+    resp = sock.recv(10)
+    if len(resp) < 2 or resp[1] != 0x00:
+        raise RuntimeError(f"SOCKS5
 
 app = FastAPI(title="CLAW-AI Twinby Manager")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -234,9 +263,12 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
     def _do_confirm():
         if not (px.get("host") and px.get("username")):
             raise RuntimeError("Прокси не настроен в Supabase (proxy_settings, id=twinby) — подключение без прокси запрещено")
-        auth = base64.b64encode(f"{px['username']}:{px['password']}".encode()).decode()
-        conn = _hc.HTTPSConnection(px["host"], int(px.get("port") or 8080), timeout=30)
-        conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
+        conn = Socks5HTTPSConnection(
+            "twinby.ru", 443,
+            px["host"], int(px.get("port") or 1080),
+            px.get("username"), px.get("password"),
+            timeout=30,
+        )
         conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers=headers)
         resp = conn.getresponse()
         status = resp.status
