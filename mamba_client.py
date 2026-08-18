@@ -141,7 +141,7 @@ def _request(method: str, path: str, cookies: dict,
 
     p = _proxy()
     if p.get("use_proxy") and p.get("host"):
-        proxy_url = f"http://{p['username']}:{p['password']}@{p['host']}:{p['port']}"
+        proxy_url = f"socks5h://{p['username']}:{p['password']}@{p['host']}:{p['port']}"
         proxies = {"https": proxy_url, "http": proxy_url}
     else:
         proxies = None
