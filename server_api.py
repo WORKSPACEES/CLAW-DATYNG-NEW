@@ -407,37 +407,45 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
     cookies = []
     x_token = ""
 
-    # ── Twinby ──
+        # ── Twinby ──
     if platform_lower == "twinby":
         if not payload.twinby_email or not payload.twinby_code:
             raise HTTPException(status_code=400, detail="Введи email и код из письма")
-        import http.client as _hc, json as _json
+        import http.client as _hc, json as _json, base64, asyncio
         from proxy_loader import get_proxy
         _proxy = get_proxy("twinby")
-        if _proxy and _proxy.get("use_proxy") and _proxy.get("host"):
-            conn = _hc.HTTPSConnection(_proxy["host"], _proxy.get("port", 8080), timeout=15)
-            _proxy_auth = {}
-            if _proxy.get("username"):
-                import base64
-                _creds = base64.b64encode(f"{_proxy.get('username','')}:{_proxy.get('password','')}".encode()).decode()
-                _proxy_auth = {"Proxy-Authorization": f"Basic {_creds}"}
-            conn.set_tunnel("twinby.ru", 443, _proxy_auth)
-        else:
-            conn = _hc.HTTPSConnection("twinby.ru", timeout=15)
-        body = _json.dumps({"login": payload.twinby_email, "provider": "email", "code": payload.twinby_code}).encode()
-        conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers={
-            "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)",
-        })
-        resp = conn.getresponse()
-        raw = resp.read()
-        conn.close()
-        if resp.status != 200:
-            raise HTTPException(status_code=400, detail=f"Неверный код или email (статус {resp.status})")
+
+        def _do_confirm():
+            if not (_proxy and _proxy.get("host") and _proxy.get("username")):
+                raise RuntimeError("Прокси не настроен для Twinby — подключение без прокси запрещено")
+            _creds = base64.b64encode(f"{_proxy.get('username','')}:{_proxy.get('password','')}".encode()).decode()
+            conn = _hc.HTTPSConnection(_proxy["host"], int(_proxy.get("port") or 8080), timeout=30)
+            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {_creds}"})
+            body = _json.dumps({"login": payload.twinby_email, "provider": "email", "code": payload.twinby_code}).encode()
+            conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers={
+                "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)",
+            })
+            resp = conn.getresponse()
+            status = resp.status
+            raw = resp.read()
+            conn.close()
+            return status, raw
+
+        try:
+            status, raw = await asyncio.to_thread(_do_confirm)
+        except Exception as e:
+            print(f"[TWINBY CONNECT ERROR] {type(e).__name__}: {e!r}", flush=True)
+            raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
+
+        if status != 200:
+            raise HTTPException(status_code=400, detail=f"Неверный код или email (статус {status})")
+
         data = _json.loads(raw.decode("utf-8", errors="ignore"))
         token = data.get("accessToken") or data.get("token") or data.get("access") or data.get("jwt") or ""
         if not token:
             raise HTTPException(status_code=400, detail=f"Twinby не вернул токен. Ответ: {str(data)[:200]}")
 
+        # Получаем фото профиля
         photo_url = ""
         try:
             from twinby_client import get_me
@@ -448,10 +456,13 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
                 photos = me.get("photos") or []
                 if photos and isinstance(photos[0], dict):
                     photo_url = photos[0].get("file") or photos[0].get("preview") or ""
+            print(f"[TWINBY CONNECT] фото: {photo_url}", flush=True)
         except Exception as e:
             print(f"[TWINBY CONNECT] фото не получено: {e}", flush=True)
 
-        account_id = str(uuid.uuid4())
+        import uuid as _uuid
+        account_id = str(_uuid.uuid4())
+
         public_account = {
             "id": account_id, "owner_email": session["email"], "platform": "Twinby",
             "name": payload.account_name or payload.twinby_email,
