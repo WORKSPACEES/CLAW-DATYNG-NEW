@@ -8,3 +8,4 @@ python-socketio[client]==5.11.2
 aiohttp
 curl_cffi
 playwright
+PySocks
