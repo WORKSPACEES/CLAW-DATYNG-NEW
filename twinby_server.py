@@ -86,10 +86,10 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     def _do_request():
         if _px.get("use_proxy") and _px.get("host"):
             auth = base64.b64encode(f"{_px['username']}:{_px['password']}".encode()).decode()
-            conn = _hc.HTTPSConnection(_px["host"], int(_px.get("port") or 8080), timeout=45)
+            conn = _hc.HTTPSConnection(_px["host"], int(_px.get("port") or 8080), timeout=30)
             conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
         else:
-            conn = _hc.HTTPSConnection("twinby.ru", timeout=45)
+            conn = _hc.HTTPSConnection("twinby.ru", timeout=30)
         conn.request("POST", "/api/auth/v2/auth/init", body=body, headers=headers)
         resp = conn.getresponse()
         status = resp.status
