@@ -3072,9 +3072,9 @@ connectSlots.addEventListener("click", async (e) => {
   btn.textContent = "Отправляю...";
   try {
     const resp = await fetch(WORKER_API + "/api/twinby/send-code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email }),
+       method: "POST",
+       headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
+       body: JSON.stringify({ email }),
     });
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || "Ошибка");
@@ -3098,7 +3098,7 @@ connectSlots.addEventListener("click", async (e) => {
   try {
     const resp = await fetch(WORKER_API + "/api/vznakomstve/send-code", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": localStorage.getItem("claw_auth_token") || "" },
       body: JSON.stringify({ email }),
     });
     const data = await resp.json();
