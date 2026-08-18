@@ -9,6 +9,9 @@ import re
 import secrets
 import time
 import uuid
+import http.client
+import socks
+import ssl
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -21,6 +24,26 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+
+class SocksHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host, port, proxy_host, proxy_port, proxy_user, proxy_pass, timeout=30):
+        super().__init__(host, port, timeout=timeout)
+        self._proxy_host = proxy_host
+        self._proxy_port = proxy_port
+        self._proxy_user = proxy_user
+        self._proxy_pass = proxy_pass
+
+    def connect(self):
+        sock = socks.socksocket()
+        sock.set_proxy(
+            socks.SOCKS5, self._proxy_host, self._proxy_port,
+            username=self._proxy_user, password=self._proxy_pass, rdns=True
+        )
+        sock.settimeout(self.timeout)
+        sock.connect((self.host, self.port))
+        context = ssl.create_default_context()
+        self.sock = context.wrap_socket(sock, server_hostname=self.host)
 
 from shared import (
     supabase, leads_supabase, require_auth, get_session, create_session,
@@ -407,20 +430,23 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
     cookies = []
     x_token = ""
 
-        # ── Twinby ──
+    # ── Twinby ──
     if platform_lower == "twinby":
         if not payload.twinby_email or not payload.twinby_code:
             raise HTTPException(status_code=400, detail="Введи email и код из письма")
-        import http.client as _hc, json as _json, base64, asyncio
+        import json as _json, asyncio
         from proxy_loader import get_proxy
         _proxy = get_proxy("twinby")
 
         def _do_confirm():
             if not (_proxy and _proxy.get("host") and _proxy.get("username")):
                 raise RuntimeError("Прокси не настроен для Twinby — подключение без прокси запрещено")
-            _creds = base64.b64encode(f"{_proxy.get('username','')}:{_proxy.get('password','')}".encode()).decode()
-            conn = _hc.HTTPSConnection(_proxy["host"], int(_proxy.get("port") or 8080), timeout=30)
-            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {_creds}"})
+            conn = SocksHTTPSConnection(
+                "twinby.ru", 443,
+                _proxy["host"], int(_proxy.get("port") or 1080),
+                _proxy.get("username"), _proxy.get("password"),
+                timeout=30,
+            )
             body = _json.dumps({"login": payload.twinby_email, "provider": "email", "code": payload.twinby_code}).encode()
             conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers={
                 "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)",
@@ -567,6 +593,107 @@ async def connect_account(payload: ConnectAccountRequest, authorization: str | N
         supabase.table("accounts").insert(public_account).execute()
         supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": cookies_raw_vzn}).execute()
         return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    # ── Mamba / Lovelaz — напрямую ──
+    if platform_lower == "mamba":
+        from mamba_client import parse_cookies as _m_parse, get_profile_photo as _m_photo
+        cookies = _m_parse(payload.cookies_raw)
+        photo_url = ""
+        try:
+            photo_url = _m_photo(cookies) or ""
+        except Exception as e:
+            print(f"[MAMBA CONNECT] фото не получено: {e}", flush=True)
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id, "owner_email": session["email"], "platform": "Mamba",
+            "name": payload.account_name or "Анкета",
+            "profile_url": payload.profile_url, "final_url": payload.profile_url,
+            "title": payload.account_name or "Анкета",
+            "photo_url": photo_url, "cookies_count": len(cookies), "cookies_valid": True,
+            "session_valid": True, "session_reason": "HTTP проверка",
+            "images_found": 0, "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": payload.cookies_raw}).execute()
+        return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    if platform_lower == "lovelaz":
+        from lovelaz_client import parse_cookies as _lz_parse, get_profile_photo as _lz_photo
+        cookies = _lz_parse(payload.cookies_raw)
+        photo_url = ""
+        try:
+            photo_url = _lz_photo(cookies) or ""
+        except Exception as e:
+            print(f"[LOVELAZ CONNECT] фото не получено: {e}", flush=True)
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id, "owner_email": session["email"], "platform": "Lovelaz",
+            "name": payload.account_name or "Анкета",
+            "profile_url": payload.profile_url, "final_url": payload.profile_url,
+            "title": payload.account_name or "Анкета",
+            "photo_url": photo_url, "cookies_count": len(cookies), "cookies_valid": True,
+            "session_valid": True, "session_reason": "HTTP проверка",
+            "images_found": 0, "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": payload.cookies_raw}).execute()
+        return {"ok": True, "account": public_account, "warning": None if photo_url else "Фото не найдено — добавь вручную."}
+
+    if platform_lower == "intcity":
+        if not payload.cookies_raw or not payload.cookies_raw.strip().startswith("["):
+            raise HTTPException(status_code=400, detail="Вставь Cookie Editor JSON")
+        account_id = str(uuid.uuid4())
+        public_account = {
+            "id": account_id,
+            "owner_email": session["email"],
+            "platform": "intCity",
+            "name": payload.account_name or payload.intcity_email,
+            "profile_url": f"mailto:{payload.intcity_email}",
+            "final_url": f"mailto:{payload.intcity_email}",
+            "photo_url": "/intcity_logo.png",
+            "session_valid": True,
+            "session_reason": "OK",
+            "images_found": 0,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        # Парсим Cookie Editor JSON и тянем токен со страницы
+        mail_cookie_str = ""
+        mail_token = ""
+        try:
+            import httpx as _httpx, re as _re
+            cookie_list = json.loads(payload.cookies_raw)
+            mail_cookie_str = "; ".join(f"{c['name']}={c['value']}" for c in cookie_list if c.get("name") and c.get("value"))
+            print(f"[intCity] Собрано кук: {len(cookie_list)}", flush=True)
+            page_resp = _httpx.get(
+                "https://e.mail.ru/inbox/",
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+                    "Cookie": mail_cookie_str,
+                },
+                timeout=15,
+                follow_redirects=True,
+            )
+            token_match = _re.search(r'[a-f0-9]{32}:[A-Za-z0-9_\-+/=.]{20,}', page_resp.text)
+            if token_match:
+                mail_token = token_match.group(0)
+                print(f"[intCity] Токен получен: {mail_token[:20]}...", flush=True)
+            else:
+                print(f"[intCity] Токен не найден в HTML", flush=True)
+        except Exception as e:
+            print(f"[intCity] Ошибка при парсинге кук: {e}", flush=True)
+
+        cookies_raw = json.dumps({
+            "email": "",
+            "password": "",
+            "mail_cookie": mail_cookie_str,
+            "mail_token": mail_token,
+        })
+        supabase.table("accounts").insert(public_account).execute()
+        supabase.table("accounts_private").insert({"id": account_id, "cookies_raw": cookies_raw}).execute()
+        warning = None if mail_token else "Токен не получен автоматически — вставь вручную на карточке"
+        return {"ok": True, "account": public_account, "warning": warning}
+
+    raise HTTPException(status_code=400, detail=f"Неизвестная платформа: {platform_lower}")
 
     # ── Mamba / Lovelaz — напрямую ──
     if platform_lower == "mamba":
