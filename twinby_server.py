@@ -90,7 +90,8 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"[TWINBY SEND-CODE ERROR] {type(e).__name__}: {e!r}", flush=True)
+        raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {e}")
 
 @app.post("/api/connect")
 async def connect_twinby(payload: dict, authorization: str | None = Header(default=None)):
