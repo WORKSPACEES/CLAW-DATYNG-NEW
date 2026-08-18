@@ -72,9 +72,7 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     email = (payload.get("email") or "").strip()
     if not email:
         raise HTTPException(status_code=400, detail="email обязателен")
-    from proxy_loader import get_proxy as _gp
-    import json as _json, http.client as _hc, base64, asyncio
-    _px = _gp("twinby")
+    import json as _json, http.client as _hc, asyncio
     body = _json.dumps({"login": email, "provider": "email", "codeSender": "email"}, ensure_ascii=False).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
@@ -84,12 +82,8 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     }
 
     def _do_request():
-        if _px.get("use_proxy") and _px.get("host"):
-            auth = base64.b64encode(f"{_px['username']}:{_px['password']}".encode()).decode()
-            conn = _hc.HTTPSConnection(_px["host"], int(_px.get("port") or 8080), timeout=30)
-            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
-        else:
-            conn = _hc.HTTPSConnection("twinby.ru", timeout=30)
+        # ВСЕГДА напрямую, без прокси
+        conn = _hc.HTTPSConnection("twinby.ru", timeout=30)
         conn.request("POST", "/api/auth/v2/auth/init", body=body, headers=headers)
         resp = conn.getresponse()
         status = resp.status
@@ -237,13 +231,12 @@ async def connect_twinby(payload: dict, authorization: str | None = Header(defau
         "Content-Length": str(len(body)),
     }
 
-    def _do_confirm():
-        if px.get("use_proxy") and px.get("host"):
-            auth = base64.b64encode(f"{px['username']}:{px['password']}".encode()).decode()
-            conn = _hc.HTTPSConnection(px["host"], int(px.get("port") or 8080), timeout=30)
-            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
-        else:
-            conn = _hc.HTTPSConnection("twinby.ru", timeout=30)
+        def _do_confirm():
+        if not (px.get("host") and px.get("username")):
+            raise RuntimeError("Прокси не настроен в Supabase (proxy_settings, id=twinby) — подключение без прокси запрещено")
+        auth = base64.b64encode(f"{px['username']}:{px['password']}".encode()).decode()
+        conn = _hc.HTTPSConnection(px["host"], int(px.get("port") or 8080), timeout=30)
+        conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
         conn.request("POST", "/api/auth/v2/auth/confirm", body=body, headers=headers)
         resp = conn.getresponse()
         status = resp.status
