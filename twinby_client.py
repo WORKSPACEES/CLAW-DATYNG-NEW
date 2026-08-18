@@ -31,8 +31,8 @@ def _proxy():
         }
     return {
         "use_proxy": True,
-        "host": "187.126.44.51",
-        "port": 64298,
+        "host": "141.133.127.7",
+        "port": 62654,
         "username": "fCSUpubz",
         "password": "BbhUDK7d",
         "user_agent": "",
