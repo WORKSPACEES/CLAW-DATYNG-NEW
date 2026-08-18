@@ -73,20 +73,34 @@ async def twinby_send_code(payload: dict, authorization: str | None = Header(def
     if not email:
         raise HTTPException(status_code=400, detail="email обязателен")
     from proxy_loader import get_proxy as _gp
-    import json as _json
+    import json as _json, http.client as _hc, base64, asyncio
     _px = _gp("twinby")
-    print(f"[TWINBY SEND-CODE] proxy config: {_px}", flush=True)
-    body = _json.dumps({"login": email, "provider": "email", "codeSender": "email"}, ensure_ascii=False)
-    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "Dart/3.11 (dart:io)"}
-    proxy_url = None
-    if _px.get("use_proxy") and _px.get("host"):
-        proxy_url = f"http://{_px['username']}:{_px['password']}@{_px['host']}:{_px['port']}"
+    body = _json.dumps({"login": email, "provider": "email", "codeSender": "email"}, ensure_ascii=False).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Dart/3.11 (dart:io)",
+        "Content-Length": str(len(body)),
+    }
+
+    def _do_request():
+        if _px.get("use_proxy") and _px.get("host"):
+            auth = base64.b64encode(f"{_px['username']}:{_px['password']}".encode()).decode()
+            conn = _hc.HTTPSConnection(_px["host"], int(_px.get("port") or 8080), timeout=45)
+            conn.set_tunnel("twinby.ru", 443, {"Proxy-Authorization": f"Basic {auth}"})
+        else:
+            conn = _hc.HTTPSConnection("twinby.ru", timeout=45)
+        conn.request("POST", "/api/auth/v2/auth/init", body=body, headers=headers)
+        resp = conn.getresponse()
+        status = resp.status
+        resp.read()
+        conn.close()
+        return status
+
     try:
-        import httpx
-        async with httpx.AsyncClient(proxy=proxy_url, timeout=45) as client:
-            resp = await client.post("https://twinby.ru/api/auth/v2/auth/init", content=body, headers=headers)
-        if resp.status_code not in (200, 202):
-            raise HTTPException(status_code=400, detail=f"Twinby вернул {resp.status_code}")
+        status = await asyncio.to_thread(_do_request)
+        if status not in (200, 202):
+            raise HTTPException(status_code=400, detail=f"Twinby вернул {status}")
         return {"ok": True}
     except HTTPException:
         raise
