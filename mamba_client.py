@@ -141,7 +141,7 @@ def _request(method: str, path: str, cookies: dict,
 
     p = _proxy()
     if p.get("use_proxy") and p.get("host"):
-        proxy_url = f"socks5h://{p['username']}:{p['password']}@{p['host']}:{p['port']}"
+        proxy_url = f"http://{p['username']}:{p['password']}@{p['host']}:{p['port']}"
         proxies = {"https": proxy_url, "http": proxy_url}
     else:
         proxies = None
@@ -643,6 +643,7 @@ def get_profile_photo(cookies: dict) -> Optional[str]:
     }, ensure_ascii=False)
     try:
         resp = _request("POST", path, cookies, body=payload)
+        print(f"[PHOTO] raw resp: {json.dumps(resp, ensure_ascii=False)[:800]}", flush=True)
         urls = (
             resp
             .get("data", {})
