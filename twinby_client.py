@@ -16,27 +16,72 @@ from pathlib import Path
 BASE_HOST = "twinby.ru"
 API_BASE = "/api"
 
+import socket as _socket
+import ssl as _ssl
+
 from proxy_loader import get_proxy as _get_proxy
 _account_proxy = {}
+
+
+def _socks5_connect(proxy_host, proxy_port, target_host, target_port, username=None, password=None, timeout=15):
+    sock = _socket.create_connection((proxy_host, int(proxy_port)), timeout=timeout)
+    sock.settimeout(timeout)
+    if username:
+        sock.sendall(b"\x05\x02\x00\x02")
+    else:
+        sock.sendall(b"\x05\x01\x00")
+    resp = sock.recv(2)
+    if len(resp) < 2 or resp[0] != 0x05:
+        raise RuntimeError("SOCKS5 handshake failed: " + repr(resp))
+    method = resp[1]
+    if method == 0x02:
+        u = username.encode()
+        p = (password or "").encode()
+        sock.sendall(bytes([0x01, len(u)]) + u + bytes([len(p)]) + p)
+        auth_resp = sock.recv(2)
+        if len(auth_resp) < 2 or auth_resp[1] != 0x00:
+            raise RuntimeError("SOCKS5 auth failed: " + repr(auth_resp))
+    elif method == 0xFF:
+        raise RuntimeError("SOCKS5: server rejected all auth methods")
+    host_bytes = target_host.encode()
+    req = b"\x05\x01\x00\x03" + bytes([len(host_bytes)]) + host_bytes + int(target_port).to_bytes(2, "big")
+    sock.sendall(req)
+    resp = sock.recv(10)
+    if len(resp) < 2 or resp[1] != 0x00:
+        code = resp[1] if len(resp) > 1 else "?"
+        raise RuntimeError("SOCKS5 CONNECT failed, code=" + str(code))
+    return sock
+
+
+class _Socks5HTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host, port, proxy_host, proxy_port, proxy_user, proxy_pass, timeout=15):
+        super().__init__(host, port, timeout=timeout)
+        self._proxy_host = proxy_host
+        self._proxy_port = proxy_port
+        self._proxy_user = proxy_user
+        self._proxy_pass = proxy_pass
+
+    def connect(self):
+        raw_sock = _socks5_connect(
+            self._proxy_host, self._proxy_port, self.host, self.port,
+            self._proxy_user, self._proxy_pass, self.timeout
+        )
+        context = _ssl.create_default_context()
+        self.sock = context.wrap_socket(raw_sock, server_hostname=self.host)
+
 
 def _proxy():
     if _account_proxy and _account_proxy.get("proxy_host"):
         return {
             "use_proxy": True,
             "host": _account_proxy["proxy_host"],
-            "port": int(_account_proxy.get("proxy_port") or 8080),
+            "port": int(_account_proxy.get("proxy_port") or 1080),
             "username": _account_proxy.get("proxy_login", ""),
             "password": _account_proxy.get("proxy_password", ""),
             "user_agent": _account_proxy.get("user_agent", ""),
         }
-    return {
-        "use_proxy": True,
-        "host": "141.133.127.7",
-        "port": 62654,
-        "username": "fCSUpubz",
-        "password": "BbhUDK7d",
-        "user_agent": "",
-    }
+    return _get_proxy("twinby")
+
 
 def set_account_proxy(settings: dict):
     global _account_proxy
@@ -130,13 +175,13 @@ def _api_request(method: str, path: str, token: str, body: dict = None, account_
         headers["Content-Length"] = str(len(body_bytes))
 
     try:
-        import base64
         if p.get("use_proxy") and p.get("host"):
-            auth = base64.b64encode(f"{p['username']}:{p['password']}".encode()).decode()
-            conn = http.client.HTTPSConnection(p["host"], p["port"], timeout=15)
-            conn.set_tunnel(BASE_HOST, 443, {
-                "Proxy-Authorization": f"Basic {auth}"
-            })
+            conn = _Socks5HTTPSConnection(
+                BASE_HOST, 443,
+                p["host"], p["port"],
+                p.get("username"), p.get("password"),
+                timeout=15,
+            )
         else:
             conn = http.client.HTTPSConnection(BASE_HOST, timeout=15)
 
