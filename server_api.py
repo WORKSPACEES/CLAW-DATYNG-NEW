@@ -34,7 +34,7 @@ from shared import (
 # Замени на реальные URL после деплоя на Render
 MAMBA_SERVER_URL      = "https://claw-datyng-new-j1ea.onrender.com"
 LOVELAZ_SERVER_URL    = "https://lovelaz-server.onrender.com"
-TWINBY_SERVER_URL     = "https://twinby-server.onrender.com"
+TWINBY_SERVER_URL     = "https://claw-datyng-new-1-1f2q.onrender.com"
 VZNAKOMSTVE_SERVER_URL = "https://vznakomstve-server.onrender.com"
 
 PLATFORM_URLS = {
