@@ -31,10 +31,10 @@ def _proxy():
         }
     return {
         "use_proxy": True,
-        "host": "154.212.31.246",
-        "port": 62670,
-        "username": "hBeZwcdSM",
-        "password": "tXsEa8hci",
+        "host": "170.168.235.130",
+        "port": 64956,
+        "username": "3iNaX51Sa",
+        "password": "wZ7HwVwFe",
         "user_agent": "",
     }
 
