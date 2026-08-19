@@ -9,3 +9,4 @@ aiohttp
 curl_cffi
 playwright
 PySocks
+requests
