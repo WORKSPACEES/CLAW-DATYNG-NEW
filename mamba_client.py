@@ -9,7 +9,7 @@ import urllib.parse
 import time
 import base64
 import gzip
-from curl_cffi import requests as curl_requests
+import requests as curl_requests
 
 def _clean_text(s):
     """Убирает null-байты, которые ломают Postgres text-поля."""
@@ -160,7 +160,6 @@ def _request(method: str, path: str, cookies: dict,
                 headers=headers,
                 data=body.encode("utf-8") if body else None,
                 proxies=proxies,
-                impersonate="chrome110",  # имитирует TLS fingerprint Chrome 110
                 timeout=30,
                 verify=False,
             )
