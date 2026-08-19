@@ -615,13 +615,31 @@ def task_auto_reply_http(
             skipped += 1
             continue
 
-        print(f"[TWINBY AUTO-REPLY] {name} (chat {chat_id}): генерирую...", flush=True)
+        user_msgs_count = sum(1 for m in history if m.get("role") == "user")
+        already_has_contact = bool(contacts) and any(
+            contacts.lower() in (m.get("content") or "").lower()
+            for m in history if m.get("role") == "assistant"
+        )
+        force_telegram = user_msgs_count == 1 and contacts and not already_has_contact
+
+        turn_system_prompt = system_prompt
+        if force_telegram:
+            turn_system_prompt = (
+                system_prompt
+                + "\n\nВАЖНО: это твой ответ на первое сообщение собеседника после знакомства. "
+                + f"В этом ответе ОБЯЗАТЕЛЬНО предложи перейти в Telegram (например: тут неудобно переписываться, "
+                + f"часто не заходишь на сайт и т.п.) и укажи свой ник {contacts}. "
+                + "Пиши живо и естественно, 1-2 короткие фразы."
+            )
+            print(f"[TWINBY AUTO-REPLY] {name} (chat {chat_id}): 2-е сообщение — форсирую приглашение в Telegram через Groq", flush=True)
+        else:
+            print(f"[TWINBY AUTO-REPLY] {name} (chat {chat_id}): генерирую...", flush=True)
 
         try:
             reply = call_groq_fn(
                 account_id=account_id,
                 settings=settings,
-                system_prompt=system_prompt,
+                system_prompt=turn_system_prompt,
                 messages=history[-20:],
             )
         except Exception as e:
@@ -632,6 +650,10 @@ def task_auto_reply_http(
         if not reply:
             skipped += 1
             continue
+
+        if force_telegram and contacts and contacts.lower() not in reply.lower():
+            # Groq мог проигнорировать инструкцию — подстрахуемся и допишем контакт
+            reply = reply.rstrip(".,!? ") + f". Кстати, вот мой Telegram: {contacts}"
 
         if should_cancel_fn and should_cancel_fn():
             break
