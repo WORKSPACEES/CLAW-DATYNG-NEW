@@ -402,7 +402,7 @@ def send_emails(
                 mark_as_sent(lead["id"])
                 continue
             import time as _time
-            _time.sleep(2)
+            _time.sleep(0.5)
             import urllib.parse, uuid
             params = {
                 "id": uuid.uuid4().hex,
@@ -513,7 +513,7 @@ def task_intcity_split(account_id: str, settings: dict, should_cancel_fn) -> dic
 
     async def _run_both():
         return await asyncio.gather(
-            _process_source(parse_intcity(pages=pages), owner_email, sender_email, subject, body, mail_cookie, mail_token, should_cancel_fn, "intimcity", send_limit=25),
+            _process_source(parse_intcity(pages=pages), owner_email, sender_email, subject, body, mail_cookie, mail_token, should_cancel_fn, "intimcity", send_limit=50),
             _process_source(parse_soderganki(pages=pages), owner_email, sender_email, subject, body, mail_cookie, mail_token, should_cancel_fn, "soderganki", send_limit=50),
             return_exceptions=True,
         )
@@ -647,7 +647,7 @@ async def process_job(job: dict):
 
             # Создаём новую задачу для следующего круга (каждые 5 минут)
             if final_status == "done":
-                await asyncio.sleep(5 * 60)
+                await asyncio.sleep(20)
                 supabase.table("job_queue").insert({
                     "account_id": account_id,
                     "platform": "intCity",
