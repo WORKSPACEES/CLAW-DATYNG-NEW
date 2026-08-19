@@ -402,7 +402,7 @@ def send_emails(
                 mark_as_sent(lead["id"])
                 continue
             import time as _time
-            _time.sleep(0.5)
+            _time.sleep(3)
             import urllib.parse, uuid
             params = {
                 "id": uuid.uuid4().hex,
@@ -436,7 +436,16 @@ def send_emails(
             print(f"[INTCITY] mail.ru status={resp.status_code} body={resp.text[:200]}", flush=True)
             if resp.status_code == 200:
                 data = resp.json()
-                body_data = data.get("body") or {}
+                body_data = data.get("body")
+                if not isinstance(body_data, dict):
+                    body_data = {}
+
+                # mail.ru поймал рассылку антиспамом — дальше слать бесполезно и вредно
+                if data.get("status") == 429 or data.get("body") == "possible_bad_guy":
+                    print(f"[INTCITY] 🛑 mail.ru заблокировал рассылку (possible_bad_guy) на {lead['email']} — останавливаю батч", flush=True)
+                    errors.append(f"{lead['email']}: заблокировано mail.ru (possible_bad_guy)")
+                    break
+
                 ok_status = data.get("status") in ("ok", 200) or data.get("id") or body_data.get("id")
                 if ok_status:
                     mark_as_sent(lead["id"])
