@@ -615,21 +615,27 @@ def task_auto_reply_http(
             skipped += 1
             continue
 
-        user_msgs_count = sum(1 for m in history if m.get("role") == "user")
+        assistant_msgs_count = sum(1 for m in history if m.get("role") == "assistant")
         already_has_contact = bool(contacts) and any(
             contacts.lower() in (m.get("content") or "").lower()
             for m in history if m.get("role") == "assistant"
         )
-        force_telegram = user_msgs_count == 1 and contacts and not already_has_contact
+        # assistant_msgs_count == 1 значит: мы уже отправили ровно 1 сообщение (приветствие),
+        # а формируемый сейчас ответ будет нашим ВТОРЫМ — вот на нём и форсируем Telegram
+        force_telegram = assistant_msgs_count == 1 and contacts and not already_has_contact
 
         turn_system_prompt = system_prompt
         if force_telegram:
             turn_system_prompt = (
                 system_prompt
-                + "\n\nВАЖНО: это твой ответ на первое сообщение собеседника после знакомства. "
-                + f"В этом ответе ОБЯЗАТЕЛЬНО предложи перейти в Telegram (например: тут неудобно переписываться, "
-                + f"часто не заходишь на сайт и т.п.) и укажи свой ник {contacts}. "
-                + "Пиши живо и естественно, 1-2 короткие фразы."
+                + "\n\nВАЖНО: в этом ответе предложи собеседнику перейти в Telegram, "
+                + f"обязательно укажи ник {contacts} прямо в тексте. "
+                + "Пиши так, как реально пишут в переписке на сайтах знакомств: живо, коротко, "
+                + "строчными буквами, без формальностей вроде 'кстати' или двоеточий перед ником. "
+                + "Пример тона (не копируй дословно, придумай свою формулировку в этом же духе): "
+                + f"'давай лучше в телеге, вот мой ник {contacts} а то тут редко захожу' или "
+                + f"'сюда редко захожу, погнали в тг {contacts}'. "
+                + "Никаких точек в конце, никакого 'Telegram:' — просто ник в тексте."
             )
             print(f"[TWINBY AUTO-REPLY] {name} (chat {chat_id}): 2-е сообщение — форсирую приглашение в Telegram через Groq", flush=True)
         else:
@@ -652,8 +658,13 @@ def task_auto_reply_http(
             continue
 
         if force_telegram and contacts and contacts.lower() not in reply.lower():
-            # Groq мог проигнорировать инструкцию — подстрахуемся и допишем контакт
-            reply = reply.rstrip(".,!? ") + f". Кстати, вот мой Telegram: {contacts}"
+            # Groq мог проигнорировать инструкцию — подстрахуемся живой фразой, без формальностей
+            fallback_phrases = [
+                f"давай лучше в телеге, вот мой ник {contacts} а то тут редко захожу",
+                f"сюда редко захожу, погнали в тг {contacts}",
+                f"тут неудобно, го в телегу {contacts}",
+            ]
+            reply = random.choice(fallback_phrases)
 
         if should_cancel_fn and should_cancel_fn():
             break
