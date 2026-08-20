@@ -25,6 +25,20 @@ def enqueue_job(account_id: str, job_type: str, payload: dict) -> dict:
     res = supabase.table("job_queue").insert({"account_id": account_id, "type": job_type, "payload": payload, "status": "pending"}).execute()
     return res.data[0]
 
+@app.get("/")
+def root():
+    return {"ok": True}
+
+@app.head("/")
+def root_head():
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
+@app.head("/health")
+def health_head():
+    from fastapi.responses import Response
+    return Response(status_code=200)
+
 @app.get("/health")
 def health():
     return {"ok": True, "service": "mamba-manager"}
@@ -63,5 +77,6 @@ def api_get_active_job(account_id: str):
     return {"ok": True, "job": res.data[0] if res.data else None}
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8002)))
