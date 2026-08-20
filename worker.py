@@ -483,6 +483,7 @@ def is_key_exhausted(error_msg: str) -> bool:
         "restricted", "organization has been", "suspended", "deactivated",
         "invalid api key", "invalid_api_key", "401", "403", "forbidden",
         "account is", "disabled",
+        "insufficient credit", "never purchased", "purchase more",
     ])
 
 OPENROUTER_FALLBACK_MODEL = "meta-llama/llama-3.3-70b-instruct"  # если модель в настройках — groq-формата, а ключ openrouter
